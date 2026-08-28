@@ -1,0 +1,4 @@
+{
+    "totvsLanguageServer.welcomePage": false,
+    "totvsLanguageServer.editor.linter.includes": "C:\\Work\\dev\\totvs\\include;c:\\Users\\Ewerton Vicentin\\AppData\\Local\\Programs\\JARVIS\\resources\\app\\extensions\\jarvis-advpl\\resources\\include;c:\\Work\\dev\\portais\\lovable\\advpl-pro-hub\\apps\\jarvis-ide\\dist\\jarvis-win32-x64\\resources\\app\\extensions\\jarvis-advpl\\resources\\include"
+}
