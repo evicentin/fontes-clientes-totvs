@@ -185,6 +185,7 @@ BeginSQL Alias "Z42QRY"
 	WHERE
 		ZI_FILIAL = %xFilial:SZI% AND
 		ZI_PATRIM = %Exp:cPatrim% AND
+        ZI_STATUS = 'A' AND
 		%NotDel%
 EndSQL
 
@@ -402,24 +403,27 @@ Return(aPatrim)
 */ cLocalid  : Localidade                                 			*/
 */ cProduto  : Produto a pesquisar                         			*/
 */ lAltera   : Permite alterar patrimônnio                 			*/
-*/ lDisp     : Mostra somente disponívl                    			*/
+*/ lDisp     : Mostra somente disponível                   			*/
+*/ cArmazem  : Armazem                                 			    */
 */------------------------------------------------------------------*/
-User Function PesqPat(cCodPosto, cLocalid, cProduto, cDoc, cSerie, lDisp)
+User Function PesqPat(cCodPosto, cLocalid, cProduto, cDoc, cSerie, lDisp, cArmazem)
 
 Local oGet
 Local oButton1
 Local oSay1, oSay2
 Local nX
 Local nOpcA        := 0
+Local cStatus      := ""
 Local aHeaderEx    := {}
 Local aColsEx      := {}
 Local aFields      := {"ZJ_PATRIM", "ZJ_NUMSER", "ZJ_ESN", "ZJ_LOCADO"}
 Local aAlterFields := {}
 
-Default lDisp   := .T.
-Default lAltera := .F.
-Default cDoc    := ""
-Default cSerie  := ""
+Default lDisp    := .T.
+Default lAltera  := .F.
+Default cDoc     := ""
+Default cSerie   := ""
+Default cArmazem := ""
 
 SZJ->(DbSetOrder(4)) // Cód. Posto + Localidade + Produto + Documento + Série
 SB1->(DbSetOrder(1)) // Código
@@ -473,6 +477,21 @@ If !Empty(cDoc)
         SZJ->(DbSkip())
     End
 Else
+    //N=Ativos;M=Manutencao;P=Perdas;R=Ressarcidos;T=Em transito
+    If !Empty(cArmazem)
+        If cArmazem == "01"
+            cStatus := "N"
+        ElseIf cArmazem == "02"
+            cStatus := "M"
+        ElseIf cArmazem == "03"
+            cStatus := "P"
+        ElseIf cArmazem == "04"
+            cStatus := "R"
+        ElseIf cArmazem == "05"
+            cStatus := "T"
+        EndIf
+    EndIf
+
     While SZJ->ZJ_FILIAL == xFilial("SZJ") .and.;
         SZJ->ZJ_CODPOST == cCodPosto .and.;
         SZJ->ZJ_LOCALID == cLocalid .and.;
@@ -481,6 +500,13 @@ Else
         If lDisp .and. SZJ->ZJ_LOCADO == "S"
             SZJ->(DbSkip())
             Loop
+        EndIf
+
+        If !Empty(cArmazem)
+            If SZJ->ZJ_LOCADO <> cStatus
+                SZJ->(DbSkip())
+                Loop
+            EndIf
         EndIf
 
         Aadd(aColsEx, Array(nUsado + 1))

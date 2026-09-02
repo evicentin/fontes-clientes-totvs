@@ -3,21 +3,45 @@
 /*/{Protheus.doc} TermoEntr
 Relatório de Termo de Entrega de Equipamentos.
 
+Pode ser chamado sem parâmetros (utiliza o SZH já posicionado, como no MovLoc)
+ou informando a chave do documento (Cód.Posto + Localidade + Documento).
+
 @author Ewerton Alex Vicentin
 @since 20/10/2025
 @version P12
+
+@param cCodPost, character, Código do Posto (opcional)
+@param cLocalid, character, Código da Localidade (opcional)
+@param cDoc, character, Número do Documento (opcional)
 /*/
-User Function TermoEntr()
+User Function TermoEntr(cCodPost, cLocalid, cDoc)
 
 Local oReport
+Local aAreaSZH := SZH->(GetArea())
+
+Default cCodPost := ""
+Default cLocalid := ""
+Default cDoc     := ""
+
+If !Empty(cCodPost) .and. !Empty(cLocalid) .and. !Empty(cDoc)
+    SZH->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento
+    If !SZH->(DbSeek(xFilial("SZH") + cCodPost + cLocalid + cDoc))
+        MsgInfo("Documento não localizado.", "Atenção")
+        RestArea(aAreaSZH)
+        Return
+    EndIf
+EndIf
 
 If SZH->ZH_STATUS <> "A"
     MsgInfo("Este não é um movimento de Entrega.", "Atenção")
+    RestArea(aAreaSZH)
     Return
 EndIf
 
 oReport := ReportDef()
 oReport:PrintDialog()
+
+RestArea(aAreaSZH)
 
 Return
 

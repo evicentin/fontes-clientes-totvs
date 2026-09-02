@@ -1585,7 +1585,6 @@ Static Function AtuaMov(oModel)
 Local nX         := 0
 Local oModelSZH  := oModel:GetModel("SZHMASTER")
 Local oModelSZI  := oModel:GetModel("SZISUBST")
-Local cQuery     := ""
 Local nOperation := oModel:GetOperation()
 Local cCodPost   := oModelSZH:GetValue("ZH_CODPOST")
 Local cLocalid   := oModelSZH:GetValue("ZH_LOCALID")
@@ -1595,8 +1594,17 @@ Local cChamado   := oModelSZH:GetValue("ZH_CHAMADO")
 Local cMotivo    := oModelSZH:GetValue("ZH_MOTIVO")
 Local cIssiOri   := ""
 Local cIssiNew   := ""
+Local cItemOri   := ""
+Local cPatOri    := ""
+Local cChvBx     := ""
+Local cChvIss    := ""
 Local nPosRef    := 0
-// ISSIs de origem já baixadas (evita baixar duas vezes o mesmo patrimônio).
+// Pares de ISSI (origem x nova) já trocados nos acessórios; o kit pode gerar
+// várias linhas substitutas com a mesma ISSI de origem.
+Local aIssTrc    := {}
+// Origens já baixadas (evita baixar duas vezes o mesmo patrimônio).
+// mv_par01 == 1 / 3: a chave é a ISSI de origem (baixa a ISSI inteira).
+// mv_par01 == 2: a chave é ISSI + ZI_ITEM + ZI_PATRIM da origem (baixa pontual).
 Local aIssiBx    := {}
 
 SZI->(DbSetOrder(5)) // ISSI + Documento + Item
@@ -1702,18 +1710,33 @@ If nOperation == MODEL_OPERATION_UPDATE
             // A baixa é feita na ISSI do patrimônio de origem referenciado pela linha nova.
             // Linha estornada/deletada não baixa ZI_DOCSUBS / ZI_STATUS do documento original.
             nPosRef  := MsvRefLin(nX)
+            cItemOri := If(nPosRef > 0, aRefSubs[nPosRef][2], "")
+            cPatOri  := If(nPosRef > 0, aRefSubs[nPosRef][3], "")
             cIssiOri := If(nPosRef > 0, aRefSubs[nPosRef][4], "")
 
             If Empty(cIssiOri)
                 Loop
             EndIf
 
-            // Cada ISSI de origem é baixada uma única vez.
-            If aScan(aIssiBx, {|x| AllTrim(x) == AllTrim(cIssiOri)}) > 0
+            // Substituição por patrimônio: a baixa é pontual, apenas no registro do
+            // patrimônio original. Os acessórios da ISSI permanecem ativos (só trocam
+            // de ISSI mais adiante), portanto não geram estoque nem perda.
+            If mv_par01 == 2
+                If Empty(cPatOri)
+                    Loop
+                EndIf
+
+                cChvBx := AllTrim(cIssiOri) + "|" + AllTrim(cItemOri) + "|" + AllTrim(cPatOri)
+            Else
+                cChvBx := AllTrim(cIssiOri)
+            EndIf
+
+            // Cada origem é baixada uma única vez.
+            If aScan(aIssiBx, {|x| AllTrim(x) == cChvBx}) > 0
                 Loop
             EndIf
 
-            AAdd(aIssiBx, cIssiOri)
+            AAdd(aIssiBx, cChvBx)
 
             // Varre todos os itens da ISSI de origem (patrimônio + acessórios) no documento original.
             SZI->(DbSetOrder(5)) // ISSI + Documento + Item
@@ -1725,6 +1748,26 @@ If nOperation == MODEL_OPERATION_UPDATE
                 If AllTrim(SZI->ZI_DOC) <> AllTrim(cDocumento) .or. SZI->ZI_STATUS <> "A"
                     SZI->(DbSkip())
                     Loop
+                EndIf
+
+                // mv_par01 == 2: baixa somente a linha do patrimônio original
+                // referenciado; acessório (ZI_PATRIM vazio) e outro patrimônio /
+                // outro item da mesma ISSI ficam intactos.
+                If mv_par01 == 2
+                    If Empty(SZI->ZI_PATRIM)
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
+
+                    If AllTrim(SZI->ZI_PATRIM) <> AllTrim(cPatOri)
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
+
+                    If !Empty(cItemOri) .and. AllTrim(SZI->ZI_ITEM) <> AllTrim(cItemOri)
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
                 EndIf
 
                 RecLock("SZI", .F.)
@@ -1779,8 +1822,8 @@ If nOperation == MODEL_OPERATION_UPDATE
     // Substituição do patrimônio deve atualizar a ISSI dos acessários para a
     // ISSI do rádio novo. Mas não atualiza nada no estoque.
     If mv_par01 == 2
-        // ISSI de origem (patrimônio substituído) x ISSI do rádio novo.
-        // Somente linha ativa (não estornada) do grid substituto troca a ISSI dos acessórios.
+        // ISSI de origem (patrimônio substituído) x ISSI do rádio novo, par a par:
+        // cada linha ativa do grid substituto troca a ISSI dos SEUS acessórios.
         For nX := 1 to oModelSZI:Length()
             If oModelSZI:IsDeleted(nX)
                 Loop
@@ -1794,20 +1837,23 @@ If nOperation == MODEL_OPERATION_UPDATE
 
             cIssiOri := aRefSubs[nPosRef][4]
             cIssiNew := oModelSZI:GetValue("ZI_ISSI", nX, oModel)
-            Exit
+
+            // Sem ISSI de origem / nova, ou ISSI igual: nada a atualizar.
+            If Empty(cIssiOri) .or. Empty(cIssiNew) .or. AllTrim(cIssiOri) == AllTrim(cIssiNew)
+                Loop
+            EndIf
+
+            cChvIss := AllTrim(cIssiOri) + "|" + AllTrim(cIssiNew)
+
+            // O kit gera várias linhas com a mesma origem: executa o par uma única vez.
+            If aScan(aIssTrc, {|x| AllTrim(x) == cChvIss}) > 0
+                Loop
+            EndIf
+
+            AAdd(aIssTrc, cChvIss)
+
+            MsvTrcIss(cIssiOri, cIssiNew, cDocumento)
         Next nX
-
-        If !Empty(cIssiOri)
-            cQuery := "UPDATE " + RetSQLName("SZI")
-            cQuery += " SET ZI_ISSI = '" + cIssiNew + "'"
-            cQuery += " WHERE "
-            cQuery += "ZI_PATRIM = '' AND "
-            cQuery += "ZI_ISSI = '" + cIssiOri + "' AND "
-            cQuery += "ZI_STATUS = 'A' AND "
-            cQuery += "D_E_L_E_T_ = ''"
-
-            TCSQLExec(cQuery)
-        EndIf
     EndIf
 
     ConfirmSX8()
@@ -1816,3 +1862,52 @@ If nOperation == MODEL_OPERATION_UPDATE
 EndIf
 
 Return(.T.)
+
+/*/{Protheus.doc} MsvTrcIss
+Troca a ISSI dos acessórios ativos do documento original: os acessórios
+(ZI_PATRIM vazio) que estavam amarrados à ISSI do patrimônio substituído passam
+a apontar para a ISSI do rádio novo. Não movimenta estoque.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@param cIssiOri, character, ISSI do patrimônio original (substituído).
+@param cIssiNew, character, ISSI do patrimônio novo (substituto).
+@param cDocOri, character, Documento original dos acessórios.
+
+@return nil
+/*/
+Static Function MsvTrcIss(cIssiOri, cIssiNew, cDocOri)
+
+Local cQuery := ""
+Local nRet   := 0
+
+Default cIssiOri := ""
+Default cIssiNew := ""
+Default cDocOri  := ""
+
+// Par incompleto ou ISSI igual: nada a atualizar.
+If Empty(cIssiOri) .or. Empty(cIssiNew) .or. AllTrim(cIssiOri) == AllTrim(cIssiNew)
+    Return
+EndIf
+
+cQuery := "UPDATE " + RetSQLName("SZI")
+cQuery += " SET ZI_ISSI = '" + AllTrim(cIssiNew) + "'"
+cQuery += " WHERE "
+cQuery += "ZI_PATRIM = '' AND "
+cQuery += "ZI_ISSI = '" + AllTrim(cIssiOri) + "' AND "
+cQuery += "ZI_DOC = '" + AllTrim(cDocOri) + "' AND "
+cQuery += "ZI_STATUS = 'A' AND "
+cQuery += "D_E_L_E_T_ = ''"
+
+nRet := TCSQLExec(cQuery)
+
+If nRet <> 0
+    DisarmTransaction()
+
+    Help(,, "ERRISSI",, "Falha ao atualizar a ISSI dos acessórios [ISSI origem " + AllTrim(cIssiOri) +;
+        " / ISSI nova " + AllTrim(cIssiNew) + "]. " + TCSQLError(), 1, 0)
+EndIf
+
+Return

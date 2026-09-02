@@ -1,16 +1,41 @@
 #Include "totvs.ch"
 
-User Function TermoDevol()
+/*/{Protheus.doc} TermoDevol
+Impressão do Termo de Devolução.
+
+@param cCodPost, character, Código do Posto (opcional)
+@param cLocalid, character, Código da Localidade (opcional)
+@param cDoc, character, Número do Documento (opcional)
+/*/
+User Function TermoDevol(cCodPost, cLocalid, cDoc)
 
 Local oReport
+Local aAreaSZH := SZH->(GetArea())
+
+Default cCodPost := ""
+Default cLocalid := ""
+Default cDoc     := ""
+
+// Quando a chave é informada pela rotina chamadora, posiciona o SZH.
+If !Empty(cCodPost) .And. !Empty(cLocalid) .And. !Empty(cDoc)
+    SZH->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento
+    If !SZH->(DbSeek(xFilial("SZH") + cCodPost + cLocalid + cDoc))
+        MsgInfo("Documento não localizado para impressão do Termo de Devolução.", "Atenção")
+        RestArea(aAreaSZH)
+        Return
+    EndIf
+EndIf
 
 If SZH->ZH_STATUS <> "D"
     MsgInfo("Este não é um movimento de Devolução.", "Atenção")
+    RestArea(aAreaSZH)
     Return
 EndIf
 
 oReport := ReportDef()
 oReport:PrintDialog()
+
+RestArea(aAreaSZH)
 
 Return
 Static Function ReportDef()

@@ -1,6 +1,9 @@
 #Include "totvs.ch"
 #Include "fwmvcdef.ch"
 
+// Opcao corrente do radio de impressao dos termos (1 = Entrega, 2 = Devolucao).
+Static nRadOpc := 1
+
 /*/{Protheus.doc} TRAN01
 Troca de gerência / centro de custo.
 
@@ -25,6 +28,9 @@ Private cISSI      := ""
 Private cAliasTmp  := GetNextAlias()
 Private cAliasIt   := GetNextAlias()
 Private aItens     := {}
+// Chaves dos documentos gerados na transferência: {ZH_CODPOST, ZH_LOCALID, ZH_DOC}
+Private aTrmEntr   := {}
+Private aTrmDevol  := {}
 
 SZ0->(DbSetOrder(1)) // Cod.Responsável
 SZH->(DbSetOrder(2)) // Documento
@@ -110,6 +116,10 @@ FWExecView("", "TRAN01", MODEL_OPERATION_INSERT, , { || .T. })
 If Select(cAliasIt)
     (cAliasIt)->(DbCloseArea())
 EndIF
+
+If !Empty(aTrmEntr) .or. !Empty(aTrmDevol)
+    DlgTermos(aTrmEntr, aTrmDevol)
+EndIf
 
 Return
 
@@ -473,6 +483,10 @@ If nOperation == MODEL_OPERATION_INSERT
     // Commit no cNewDoc.
     ConfirmSX8()
 
+    // Guarda as chaves dos documentos gerados para a impressão dos termos.
+    aTrmEntr  := {cCodPost, cLocalid, cNewDoc}
+    aTrmDevol := {cCodPost, cLocalid, cNewDev}
+
     Endtran()
 EndIf
 
@@ -481,3 +495,87 @@ MsgInfo("Transferência concluída. Novo documento de entrega [" + cNewDoc + "] - 
 
 
 Return(.T.)
+
+/*/{Protheus.doc} DlgTermos
+Pergunta qual termo deve ser impresso após a transferência.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function DlgTermos(aEntrega, aDevol)
+
+Local oDlg
+Local oSay1
+Local oRadio
+Local oBtnImp
+Local oBtnSai
+Local aOpcoes := {"Entrega", "Devolução"}
+
+Default aEntrega := {}
+Default aDevol   := {}
+
+DEFINE MSDIALOG oDlg TITLE "Imprimir Termo?" FROM 000, 000 TO 130, 250 COLORS 0, 16777215 PIXEL
+
+@ 005, 005 SAY oSay1 PROMPT "Selecione o termo que deseja imprimir:" SIZE 120, 007 OF oDlg COLORS 0, 16777215 PIXEL
+
+// O 4o. parametro (bSetGet) e a unica fonte do estado: chamado com Nil devolve a opcao
+// corrente, o que ja deixa a 1a. opcao marcada na montagem do objeto.
+nRadOpc := 1
+oRadio  := TRadMenu():New(018, 005, aOpcoes, {|u| RadOpc(u)}, oDlg,,,,,,,, 100, 025,,,, .T.)
+
+@ 050, 032 BUTTON oBtnImp PROMPT "Imprimir" ACTION(ImpTermo(RadOpc(), aEntrega, aDevol)) SIZE 037, 012 OF oDlg PIXEL
+@ 050, 074 BUTTON oBtnSai PROMPT "Sair" ACTION(oDlg:End()) SIZE 037, 012 OF oDlg PIXEL
+
+ACTIVATE MSDIALOG oDlg CENTERED
+
+Return
+
+/*/{Protheus.doc} RadOpc
+Get/Set da opcao selecionada no radio de impressao dos termos.
+Chamada sem parametro (ou com Nil, como o TRadMenu faz na montagem) devolve a opcao
+corrente; chamada com um numero grava a nova opcao escolhida pelo usuario.
+
+@param uOpc Opcao selecionada no radio (1 = Entrega, 2 = Devolucao)
+@return nRadOpc Opcao corrente
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function RadOpc(uOpc)
+
+If uOpc <> Nil .And. ValType(uOpc) == "N" .And. uOpc > 0
+	nRadOpc := uOpc
+EndIf
+
+Return nRadOpc
+
+/*/{Protheus.doc} ImpTermo
+Dispara a impressão do termo escolhido, sem fechar o diálogo.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function ImpTermo(nOpc, aEntrega, aDevol)
+
+Default nOpc     := 1
+Default aEntrega := {}
+Default aDevol   := {}
+
+If nOpc == 1
+    If Empty(aEntrega)
+        MsgInfo("Não há documento de entrega gerado nessa transferência.", "Atenção")
+    Else
+        U_TermoEntr(aEntrega[1], aEntrega[2], aEntrega[3])
+    EndIf
+ElseIf nOpc == 2
+    If Empty(aDevol)
+        MsgInfo("Não há documento de devolução gerado nessa transferência.", "Atenção")
+    Else
+        U_TermoDevol(aDevol[1], aDevol[2], aDevol[3])
+    EndIf
+EndIf
+
+Return
