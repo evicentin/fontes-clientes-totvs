@@ -869,7 +869,7 @@ If SZI->(DbSeek(xFilial("SZI") + cCodPost + cLocalid + cDocumento))
         SZI->ZI_LOCALID == cLocalid .and.;
         SZI->ZI_DOC == cDocumento .and. !SZI->(EOF())
 
-        If SZI->ZI_STATUS == "A" .and. !Empty(SZI->ZI_PATRIM)
+        If SZI->ZI_STATUS $ "A" .and. !Empty(SZI->ZI_PATRIM)
             AAdd(aRet, {SZI->ZI_ITEM   ,;
                         SZI->ZI_PATRIM ,;
                         SZI->ZI_ISSI   ,;

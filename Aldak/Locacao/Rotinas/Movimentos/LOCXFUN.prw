@@ -175,7 +175,7 @@ Return(aRet)
 */------------------------------------------------------------------*/
 User Function RetDocPat(cPatrim)
 
-Local aRet := {}
+Local aRet := {"","","",""}
 
 BeginSQL Alias "Z42QRY"
 	SELECT 
@@ -543,12 +543,42 @@ Return
 */------------------------------------------------------------------*/
 User Function GravaEst(cCodPosto, cCodLoc, cProduto, cLocal, nQuant, cTipo)
 
+Local lExiste   := .F.
+Local nSaldoAtu := 0
+Local nSaldoFim := 0
+Default cTipo := "E"
+
 SB1->(DbSetOrder(1)) // Código
 SZF->(DbSetOrder(1)) // Cód.Posto + Localidade + Produto + Local
 
 SB1->(DbSeek(xFilial("SB1") + cProduto))
 
-If !SZF->(DbSeek(xFilial("SZF") + cCodPosto + cCodLoc + cProduto + cLocal))
+lExiste := SZF->(DbSeek(xFilial("SZF") + cCodPosto + cCodLoc + cProduto + cLocal))
+
+If lExiste
+    nSaldoAtu := SZF->ZF_SALDO
+EndIf
+
+// ------------------------------------------------------------------
+// Somente aviso: movimento de saida que deixa o saldo negativo.
+// Nao bloqueia a gravacao.
+// ------------------------------------------------------------------
+If cTipo == "S"
+    nSaldoFim := nSaldoAtu - nQuant
+
+    If nSaldoFim < 0
+        MsgAlert("Atenção! Esta movimentação vai deixar o estoque negativo." + CRLF + ;
+            "Posto avançado: " + AllTrim(cCodPosto) + CRLF + ;
+            "Localidade....: " + AllTrim(cCodLoc) + CRLF + ;
+            "Produto.......: " + AllTrim(cProduto) + " - " + AllTrim(SB1->B1_DESC) + CRLF + ;
+            "Local.........: " + AllTrim(cLocal) + CRLF + ;
+            "Saldo atual...: " + AllTrim(Transform(nSaldoAtu, "@E 999,999,999.99")) + CRLF + ;
+            "Quantidade....: " + AllTrim(Transform(nQuant, "@E 999,999,999.99")) + CRLF + ;
+            "Saldo final...: " + AllTrim(Transform(nSaldoFim, "@E 999,999,999.99")), "Estoque negativo")
+    EndIf
+EndIf
+
+If !lExiste
     RecLock("SZF", .T.)
     SZF->ZF_FILIAL  := xFilial("SZF")
     SZF->ZF_CODPOST := cCodPosto
@@ -559,8 +589,10 @@ If !SZF->(DbSeek(xFilial("SZF") + cCodPosto + cCodLoc + cProduto + cLocal))
     SZF->ZF_SALDO   := nQuant
     MsUnlock()
 Else
+    nSaldoAtu := If(cTipo=="E", SZF->ZF_SALDO + nQuant, SZF->ZF_SALDO - nQuant)
+
     RecLock("SZF", .F.)
-    SZF->ZF_SALDO := If(cTipo=="E", SZF->ZF_SALDO + nQuant, SZF->ZF_SALDO - nQuant)
+    SZF->ZF_SALDO := nSaldoAtu
     MsUnlock()
 EndIf
 

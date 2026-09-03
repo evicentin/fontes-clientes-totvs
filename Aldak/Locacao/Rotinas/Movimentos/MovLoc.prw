@@ -318,53 +318,55 @@ If nOperation == MODEL_OPERATION_INSERT
 	// Faz a gravação.
 	For nI := 1 To oModelSZI:Length()
 		oModelSZI:GoLine(nI)
-		
-		cItem     := oModelSZI:GetValue("ZI_ITEM")
-		cProduto  := oModelSZI:GetValue("ZI_PRODUTO")
-		nQuant    := oModelSZI:GetValue("ZI_QUANT")
-		cPatrim   := oModelSZI:GetValue("ZI_PATRIM")
-		cKit      := oModelSZI:GetValue("ZI_CODKIT")
-		cNumSeq   := oModelSZI:GetValue("ZI_NUMSEQ")
 
-		U_GravaEst(cCodPost, cLocalid, cProduto, "01", nQuant, "S")
+		If !oModelSZI:IsDeleted()
+			cItem     := oModelSZI:GetValue("ZI_ITEM")
+			cProduto  := oModelSZI:GetValue("ZI_PRODUTO")
+			nQuant    := oModelSZI:GetValue("ZI_QUANT")
+			cPatrim   := oModelSZI:GetValue("ZI_PATRIM")
+			cKit      := oModelSZI:GetValue("ZI_CODKIT")
+			cNumSeq   := oModelSZI:GetValue("ZI_NUMSEQ")
 
-		If !Empty(cPatrim)
-			// Muda o status do patrimônio para locado.
-			If SZJ->(DbSeek(xFilial("SZJ") + cPatrim))
-				RecLock("SZJ", .F.)
-				SZJ->ZJ_LOCADO := "S"
-				MsUnlock()
-			EndIf
+			U_GravaEst(cCodPost, cLocalid, cProduto, "01", nQuant, "S")
 
-			// Registra o valor da primeira locação caso ainda não tenha sido locado.
-			If !SZK->(DbSeek(xFilial("SZK") + cCodPost + cLocalid + cKit + cPatrim))
-				nValor := 0
-				// Se não tem valor de referência do patrimôio anteior, consulta o valor vigente na tabela.
-				If SZL->(DbSeek(xFilial("SZL") + cCodPost + cLocalid + cKit))
-					While SZL->ZL_FILIAL == xFilial("SZL") .and.;
-						SZL->ZL_CODPOST == cCodPost .and.;
-						SZL->ZL_LOCALID == cLocalid .and.;
-						SZL->ZL_CODKIT == cKit .and. !SZL->(EOF())
-						
-						If SZL->ZL_DATADE <= dDataBase .and. SZL->ZL_DATAATE >= dDataBase
-							nValor := SZL->ZL_VALOR
-							Exit
-						EndIf
-						
-						SZL->(DbSkip())
-					End
+			If !Empty(cPatrim)
+				// Muda o status do patrimônio para locado.
+				If SZJ->(DbSeek(xFilial("SZJ") + cPatrim))
+					RecLock("SZJ", .F.)
+					SZJ->ZJ_LOCADO := "S"
+					MsUnlock()
 				EndIf
 
-				// Registra a primeira locação e o respectivo valor.
-				RecLock("SZK", .T.)
-				SZK->ZK_FILIAL  := xFilial("SZK")
-				SZK->ZK_CODPOST := cCodPost
-				SZK->ZK_LOCALID := cLocalid
-				SZK->ZK_CODKIT  := cKit
-				SZK->ZK_ENTREGA := dDataBase
-				SZK->ZK_PATRIM  := cPatrim
-				SZK->ZK_VALOR   := nValor
-				MsUnlock()
+				// Registra o valor da primeira locação caso ainda não tenha sido locado.
+				If !SZK->(DbSeek(xFilial("SZK") + cCodPost + cLocalid + cKit + cPatrim))
+					nValor := 0
+					// Se não tem valor de referência do patrimôio anteior, consulta o valor vigente na tabela.
+					If SZL->(DbSeek(xFilial("SZL") + cCodPost + cLocalid + cKit))
+						While SZL->ZL_FILIAL == xFilial("SZL") .and.;
+							SZL->ZL_CODPOST == cCodPost .and.;
+							SZL->ZL_LOCALID == cLocalid .and.;
+							SZL->ZL_CODKIT == cKit .and. !SZL->(EOF())
+							
+							If SZL->ZL_DATADE <= dDataBase .and. SZL->ZL_DATAATE >= dDataBase
+								nValor := SZL->ZL_VALOR
+								Exit
+							EndIf
+							
+							SZL->(DbSkip())
+						End
+					EndIf
+
+					// Registra a primeira locação e o respectivo valor.
+					RecLock("SZK", .T.)
+					SZK->ZK_FILIAL  := xFilial("SZK")
+					SZK->ZK_CODPOST := cCodPost
+					SZK->ZK_LOCALID := cLocalid
+					SZK->ZK_CODKIT  := cKit
+					SZK->ZK_ENTREGA := dDataBase
+					SZK->ZK_PATRIM  := cPatrim
+					SZK->ZK_VALOR   := nValor
+					MsUnlock()
+				EndIf
 			EndIf
 		EndIf
 	Next nI
