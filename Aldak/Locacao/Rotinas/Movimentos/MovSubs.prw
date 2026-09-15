@@ -39,6 +39,13 @@ If !Pergunte("SUBSTEQUIP", .T.)
 	Return
 EndIf
 
+// Substituição de acessórios (mv_par01 == 3) é sempre filtrada pela ISSI do
+// patrimônio informado, portanto o patrimônio (mv_par03) é obrigatório.
+If mv_par01 == 3 .and. Empty(mv_par03)
+    MsgInfo("Para trocar os acessórios é necessário informar o patrimônio.", "Atenção")
+    Return
+EndIf
+
 If !Empty(mv_par03)
     // aDoc[1] - ZI_DOC
     // aDoc[2] - ZI_STATUS
@@ -67,6 +74,12 @@ cResp      := SZH->ZH_CODRESP
 cMotivo    := SZH->ZH_MOTIVO
 cNumSeq    := If(Empty(mv_par03), Posicione("SZI", 1, xFilial("SZI") + cCodPost + cLocalid + cDocumento, "ZI_NUMSEQ"), aDoc[4])
 cISSI      := If(Empty(mv_par03), Posicione("SZI", 1, xFilial("SZI") + cCodPost + cLocalid + cDocumento, "ZI_ISSI"), aDoc[3])
+
+// Sem a ISSI do patrimônio não há como filtrar os acessórios da substituição.
+If mv_par01 == 3 .and. Empty(cISSI)
+    MsgInfo("Não foi possível identificar a ISSI do patrimônio informado.", "Atenção")
+    Return
+EndIf
 
 FWExecView("", "MOVSUBS", MODEL_OPERATION_UPDATE, , { || .T. })
 
@@ -97,6 +110,8 @@ oStruSZH:SetProperty("ZH_LOCALID", MODEL_FIELD_WHEN, FwBuildFeature(STRUCT_FEATU
 oStruSZH:SetProperty("ZH_CC", MODEL_FIELD_WHEN, FwBuildFeature(STRUCT_FEATURE_WHEN, ".F."))
 oStruSZH:SetProperty("ZH_CODRESP", MODEL_FIELD_WHEN, FwBuildFeature(STRUCT_FEATURE_WHEN, ".F."))
 
+oSZISub:SetProperty('ZI_DTBASE', MODEL_FIELD_INIT , {|| dDataBase})
+
 oModel:AddFields("SZHMASTER",, oStruSZH)
 
 oModel:AddGrid("SZIORIGEM", "SZHMASTER", oSZIOri)
@@ -113,6 +128,12 @@ If mv_par01 == 2
     cFilOri += " AND ZI_PATRIM <> ''"
 ElseIf mv_par01 == 3
     cFilOri += " AND ZI_PATRIM = ''"
+
+    // Substituicao de acessorios: mostra somente os acessorios da ISSI do
+    // patrimonio informado no Pergunte.
+    If !Empty(cISSI)
+        cFilOri += " AND ZI_ISSI = '" + AllTrim(cISSI) + "'"
+    EndIf
 EndIf
 
 oModel:GetModel("SZIORIGEM"):SetLoadFilter(Nil, cFilOri)
@@ -120,6 +141,11 @@ oModel:GetModel("SZIORIGEM"):SetLoadFilter(Nil, cFilOri)
 If mv_par01 == 3
     // Itens substitutos: apenas acessorios (sem patrimonio) e ativos.
     cFilSub := "ZI_STATUS = 'A' AND ZI_PATRIM = ''"
+
+    // Mesma regra do grid de origem: so os acessorios da ISSI do patrimonio.
+    If !Empty(cISSI)
+        cFilSub += " AND ZI_ISSI = '" + AllTrim(cISSI) + "'"
+    EndIf
 
     oModel:GetModel("SZISUBST"):SetLoadFilter(Nil, cFilSub)
 
@@ -151,9 +177,9 @@ Static Function ViewDef()
 Local oView
 Local oStruSZH   := FWFormStruct(2, "SZH")
 Local oSZIOri    := FWFormStruct(2, "SZI", {|x| !AllTrim(x) + "|" $ "ZI_CODPOST|ZI_LOCALID|ZI_DATADEV|ZI_PERDA|ZI_DPSMI|ZI_DPSEQ|ZI_DPSKIT|"+;
-                                                                    "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|"})
+                                                                    "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DTBASE|"})
 Local oSZISub    := FWFormStruct(2, "SZI", {|x| !AllTrim(x) + "|" $ "ZI_CODPOST|ZI_LOCALID|ZI_STATUS|ZI_DATADEV|ZI_PERDA|ZI_DOCSUBS|ZI_DPSMI|ZI_DPSEQ|"+;
-                                                                    "ZI_DPSKIT|ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|"})
+                                                                    "ZI_DPSKIT|ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTBASE|"})
 Local oModel     := FWLoadModel("MOVSUBS")
 
 oView := FWFormView():New()
@@ -827,6 +853,12 @@ While SZI->ZI_FILIAL == xFilial("SZI") .and.;
             SZI->(DbSkip())
             Loop
         EndIf
+
+        // Somente os acessorios da ISSI do patrimonio informado.
+        If !Empty(cISSI) .and. AllTrim(SZI->ZI_ISSI) <> AllTrim(cISSI)
+            SZI->(DbSkip())
+            Loop
+        EndIf
     EndIf
 
     lRet := .T.
@@ -835,7 +867,11 @@ While SZI->ZI_FILIAL == xFilial("SZI") .and.;
 End
 
 If !lRet
-    Help(,, "SEMIT",, "Esse documento não tem nenhum item ativo para ser substituído", 1, 0)
+    If mv_par01 == 3
+        Help(,, "SEMIT",, "O patrimônio informado não possui acessórios ativos para serem substituídos", 1, 0)
+    Else
+        Help(,, "SEMIT",, "Esse documento não tem nenhum item ativo para ser substituído", 1, 0)
+    EndIf
 EndIf
 
 Return(lRet)
@@ -1410,12 +1446,30 @@ Local aPatOri    := MsvPatOri()
 Local nPosRef    := 0
 Local nPosOri    := 0
 Local aSaveLines := FWSaveRows()
+Local cIssiPat   := MsvIssPat()
+Local aAcsOri    := If(mv_par01 == 3, MsvAcsOri(), {})
+Local nLinAtiv   := 0
 Local lRet       := .T.
 
 If nOperation == MODEL_OPERATION_UPDATE
 	If nLinhas == 0
 		Help(,, "SEMMOV",, "Preencha os equipamentos substitutos.", 1, 0)
 		lRet := .F.
+	EndIf
+
+	// Substituição de acessórios: exige ao menos uma linha ativa no grid dos
+	// itens substitutos (linha deletada não conta).
+	If mv_par01 == 3
+		For nX := 1 to nLinhas
+			If !oGrid:IsDeleted(nX)
+				nLinAtiv++
+			EndIf
+		Next nX
+
+		If nLinAtiv == 0
+			Help(,, "SEMACES",, "Informe ao menos um acessório substituto para o patrimônio selecionado.", 1, 0)
+			lRet := .F.
+		EndIf
 	EndIf
 
 	For nX := 1 to nLinhas
@@ -1435,7 +1489,30 @@ If nOperation == MODEL_OPERATION_UPDATE
 			cIssiOri := If(nPosRef > 0, aRefSubs[nPosRef][4], "")
 			cGrupAtu := If(nPosRef > 0, aRefSubs[nPosRef][5], "")
 
-			If nPosRef == 0 .or. Empty(cPatOri)
+			If mv_par01 == 3
+				// Acessórios: a origem é a ISSI do patrimônio informado no
+				// Pergunte; não há amarração linha a linha por patrimônio.
+				If !Empty(cIssiPat) .and. AllTrim(cISSI) <> AllTrim(cIssiPat)
+					Help(,, "ISSIDIF",, "[Item: " + cItem + "] A ISSI da linha deve ser a ISSI do patrimônio selecionado [" +;
+						AllTrim(cIssiPat) + "].", 1, 0)
+					lRet := .F.
+				EndIf
+
+				If !Empty(cPatrim)
+					Help(,, "ACESPAT",, "[Item: " + cItem + "] Na troca de acessórios o item não pode ter patrimônio.", 1, 0)
+					lRet := .F.
+				EndIf
+
+				// O produto substituto tem que pertencer aos acessórios ativos
+				// da ISSI selecionada no documento original.
+				If !Empty(cProduto) .and. Len(aAcsOri) > 0
+					If aScan(aAcsOri, {|x| AllTrim(x) == AllTrim(cProduto)}) == 0
+						Help(,, "PRDNOISS",, "[Item: " + cItem + "] O produto [" + AllTrim(cProduto) +;
+							"] não pertence aos acessórios da ISSI [" + AllTrim(cIssiPat) + "].", 1, 0)
+						lRet := .F.
+					EndIf
+				EndIf
+			ElseIf nPosRef == 0 .or. Empty(cPatOri)
 				Help(,, "SEMORIG",, "[Item: " + cItem + "] Informe qual patrimônio do documento original está sendo substituído.", 1, 0)
 				lRet := .F.
 			Else
@@ -1494,6 +1571,77 @@ EndIf
 FWRestRows(aSaveLines)
 
 Return(lRet)
+
+/*/{Protheus.doc} MsvIssPat
+Devolve a ISSI do patrimônio informado no Pergunte (mv_par03), usada como filtro
+da substituição de acessórios (mv_par01 == 3).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@return character, ISSI do patrimônio; "" nas demais substituições.
+/*/
+Static Function MsvIssPat()
+
+Local cRet := ""
+
+If mv_par01 == 3 .and. !Empty(cISSI)
+    cRet := AllTrim(cISSI)
+EndIf
+
+Return(cRet)
+
+/*/{Protheus.doc} MsvAcsOri
+Devolve os produtos dos acessórios ativos (ZI_PATRIM vazio) da ISSI do
+patrimônio informado, dentro do documento original.
+
+Serve de base para criticar, em MovTudoOk(), o item substituto cujo produto não
+pertence à ISSI selecionada.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@return array, Lista de ZI_PRODUTO dos acessórios da ISSI.
+/*/
+Static Function MsvAcsOri()
+
+Local aArea   := GetArea()
+Local aAreaZI := SZI->(GetArea())
+Local cIssiPt := MsvIssPat()
+Local aRet    := {}
+
+If Empty(cIssiPt)
+    RestArea(aAreaZI)
+    RestArea(aArea)
+    Return(aRet)
+EndIf
+
+SZI->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento + Item
+
+If SZI->(DbSeek(xFilial("SZI") + cCodPost + cLocalid + cDocumento))
+    While SZI->ZI_FILIAL == xFilial("SZI") .and.;
+        SZI->ZI_CODPOST == cCodPost .and.;
+        SZI->ZI_LOCALID == cLocalid .and.;
+        SZI->ZI_DOC == cDocumento .and. !SZI->(EOF())
+
+        If SZI->ZI_STATUS == "A" .and. Empty(SZI->ZI_PATRIM) .and.;
+            AllTrim(SZI->ZI_ISSI) == cIssiPt
+
+            If aScan(aRet, {|x| AllTrim(x) == AllTrim(SZI->ZI_PRODUTO)}) == 0
+                AAdd(aRet, SZI->ZI_PRODUTO)
+            EndIf
+        EndIf
+
+        SZI->(DbSkip())
+    End
+EndIf
+
+RestArea(aAreaZI)
+RestArea(aArea)
+
+Return(aRet)
 
 /*/{Protheus.doc} MsvPatDup
 Verifica se o patrimônio de origem da linha corrente já está referenciado por
@@ -1597,6 +1745,9 @@ Local cIssiNew   := ""
 Local cItemOri   := ""
 Local cPatOri    := ""
 Local cChvBx     := ""
+Local cIssiGrv   := ""
+Local cPatGrv    := ""
+Local cSeqGrv    := ""
 Local cChvIss    := ""
 Local nPosRef    := 0
 // Pares de ISSI (origem x nova) já trocados nos acessórios; o kit pode gerar
@@ -1606,6 +1757,12 @@ Local aIssTrc    := {}
 // mv_par01 == 1 / 3: a chave é a ISSI de origem (baixa a ISSI inteira).
 // mv_par01 == 2: a chave é ISSI + ZI_ITEM + ZI_PATRIM da origem (baixa pontual).
 Local aIssiBx    := {}
+// Itens do documento original que permaneceram (nao deletados) no grid dos
+// itens substitutos. Usado na substituicao de acessorios (mv_par01 == 3), onde
+// o grid SZISUBST e carregado com os proprios itens do documento original.
+Local aItGrid    := {}
+Local lItGrid    := .F.
+Local cItGrid    := ""
 
 SZI->(DbSetOrder(5)) // ISSI + Documento + Item
 SZJ->(DbSetOrder(3)) // Patrimônio
@@ -1637,6 +1794,23 @@ If nOperation == MODEL_OPERATION_UPDATE
 
         If !oModelSZI:IsDeleted()
 
+            // Substituição de acessórios (mv_par01 == 3): a ISSI da linha nova
+            // sempre acompanha a ISSI do patrimônio de origem informado no
+            // Pergunte; o ZI_NUMSEQ mantém o tratamento atual do documento.
+            cIssiGrv := oModelSZI:GetValue("ZI_ISSI", nX, oModel)
+            cPatGrv  := oModelSZI:GetValue("ZI_PATRIM", nX, oModel)
+            cSeqGrv  := oModelSZI:GetValue("ZI_NUMSEQ", nX, oModel)
+
+            If mv_par01 == 3
+                If !Empty(cISSI)
+                    cIssiGrv := cISSI
+                EndIf
+
+                If Empty(cSeqGrv)
+                    cSeqGrv := cNumSeq
+                EndIf
+            EndIf
+
             // Grava o item novo.
             RecLock("SZI", .T.)
             SZI->ZI_FILIAL  := xFilial("SZI")
@@ -1646,15 +1820,15 @@ If nOperation == MODEL_OPERATION_UPDATE
             SZI->ZI_STATUS  := "A"
             SZI->ZI_ITEM    := oModelSZI:GetValue("ZI_ITEM", nX, oModel)
             SZI->ZI_PRODUTO := oModelSZI:GetValue("ZI_PRODUTO", nX, oModel)
-            SZI->ZI_PATRIM  := oModelSZI:GetValue("ZI_PATRIM", nX, oModel)
+            SZI->ZI_PATRIM  := cPatGrv
             SZI->ZI_NUMSER  := oModelSZI:GetValue("ZI_NUMSER", nX, oModel)
-            SZI->ZI_ISSI    := oModelSZI:GetValue("ZI_ISSI", nX, oModel)
+            SZI->ZI_ISSI    := cIssiGrv
             SZI->ZI_CODKIT  := oModelSZI:GetValue("ZI_CODKIT", nX, oModel)
             SZI->ZI_QUANT   := oModelSZI:GetValue("ZI_QUANT", nX, oModel)
             SZI->ZI_LOCALIZ := oModelSZI:GetValue("ZI_LOCALIZ", nX, oModel)
             SZI->ZI_DATAMOV := dDataBase
             SZI->ZI_DESCRI  := oModelSZI:GetValue("ZI_DESCRI", nX, oModel)
-            SZI->ZI_NUMSEQ  := oModelSZI:GetValue("ZI_NUMSEQ", nX, oModel)
+            SZI->ZI_NUMSEQ  := cSeqGrv
             MsUnlock()
 
             // Movimenta o estoque.
@@ -1703,6 +1877,30 @@ If nOperation == MODEL_OPERATION_UPDATE
     Next nX
 
     // Altera o status dos itens substituídos.
+    // Fotografa os itens que permaneceram no grid dos substitutos (linha não
+    // deletada). Na troca de acessórios (mv_par01 == 3) o grid SZISUBST é
+    // carregado com os próprios itens do documento original, portanto só pode
+    // ser baixado o item que o usuário NÃO apagou no grid.
+    If mv_par01 == 3
+        For nX := 1 to oModelSZI:Length()
+            If oModelSZI:IsDeleted(nX)
+                Loop
+            EndIf
+
+            cItGrid := AllTrim(oModelSZI:GetValue("ZI_ITEM", nX, oModel))
+
+            If Empty(cItGrid)
+                Loop
+            EndIf
+
+            If aScan(aItGrid, {|x| AllTrim(x) == cItGrid}) == 0
+                AAdd(aItGrid, cItGrid)
+            EndIf
+        Next nX
+
+        lItGrid := Len(aItGrid) > 0
+    EndIf
+
     For nX := 1 to oModelSZI:Length()
         oModelSZI:GoLine(nX)
 
@@ -1713,6 +1911,19 @@ If nOperation == MODEL_OPERATION_UPDATE
             cItemOri := If(nPosRef > 0, aRefSubs[nPosRef][2], "")
             cPatOri  := If(nPosRef > 0, aRefSubs[nPosRef][3], "")
             cIssiOri := If(nPosRef > 0, aRefSubs[nPosRef][4], "")
+
+            // Kit / patrimônio (mv_par01 == 1 e 2): sem amarração ativa não há
+            // o que baixar. A linha estornada ou apagada no grid dos itens
+            // substitutos não pode alterar o documento original.
+            If mv_par01 <> 3 .and. nPosRef == 0
+                Loop
+            EndIf
+
+            // Substituição de acessórios: não há amarração de patrimônio pelo
+            // botão de kit; a origem é sempre a ISSI do patrimônio informado.
+            If mv_par01 == 3 .and. Empty(cIssiOri)
+                cIssiOri := cISSI
+            EndIf
 
             If Empty(cIssiOri)
                 Loop
@@ -1770,8 +1981,32 @@ If nOperation == MODEL_OPERATION_UPDATE
                     EndIf
                 EndIf
 
+                // mv_par01 == 3: baixa somente os acessórios (ZI_PATRIM vazio)
+                // da ISSI do patrimônio escolhido; o próprio patrimônio e os
+                // acessórios das demais ISSIs seguem ativos.
+                If mv_par01 == 3
+                    If !Empty(SZI->ZI_PATRIM)
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
+
+                    If !Empty(cISSI) .and. AllTrim(SZI->ZI_ISSI) <> AllTrim(cISSI)
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
+
+                    // Só baixa o acessório que permaneceu no grid dos itens
+                    // substitutos; o que o usuário deletou continua ativo no
+                    // documento original (não muda status, não gera estoque).
+                    If lItGrid .and. aScan(aItGrid, {|x| AllTrim(x) == AllTrim(SZI->ZI_ITEM)}) == 0
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
+                EndIf
+
                 RecLock("SZI", .F.)
                 SZI->ZI_DOCSUBS := cNewDoc
+                SZI->ZI_DATADEV := dDataBase
                 SZI->ZI_STATUS := If(mv_par02 == 1, "R", "S") // R = Reposição / S = Substituído
                 MsUnlock()
 

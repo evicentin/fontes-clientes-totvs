@@ -54,7 +54,14 @@ Local oModel := MPFormModel():New("ITREC02M", /*bPreValidacao*/, {|oModel| TudoO
 
 oStruSZN:SetProperty('ZN_TIPO', MODEL_FIELD_INIT , {|| 'E'})
 
-oStruSZO:SetProperty("ZO_DESCCC", MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_CCDESC02()"))
+oStruSZN:SetProperty('ZN_CODPOST', MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_VlCdPos2()"))
+oStruSZN:SetProperty('ZN_NUMQQP', MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_VlNumQQ2()"))
+
+oStruSZE:SetProperty('ZE_ITEM', MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_VlItQQ2()"))
+
+oStruSZO:SetProperty('ZO_CC', MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_VldCC2()"))
+
+oStruSZS:SetProperty('ZS_LOCALID', MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_VldLoc2()"))
 
 oModel:AddFields("ZNMASTER",, oStruSZN)
 
@@ -124,28 +131,136 @@ oView:SetOwnerView("VIEW_SZS", "RODAPEDIR")
 
 Return(oview)
 
-/*/{Protheus.doc} CCDESC02
-Carrega dados da linha amterior na linha atual.
+/*/{Protheus.doc} VlCdPos2
+Gatilhos do campo código do posto (ZN_CODPOST).
 
 @author Ewerton Alex Vicentin
 @since 20/10/2025
 @version P12
 /*/
-User Function CCDESC02()
+User Function VlCdPos2()
 
-Local oModel     := FWModelActive()
-Local oGrid      := oModel:GetModel("ZODETAIL")
-Local nLinha    := oGrid:GetLine()
+Local oModel    := FWModelActive()
+Local oModelSZN := oModel:GetModel("ZNMASTER")
+Local cCodPosto := oModelSZN:GetValue("ZN_CODPOST")
 
-SZ5->(DbSetOrder(1))
+SZ1->(DbSetOrder(1)) //Cód.Posto
 
-cCC  := oGrid:GetValue("ZO_CC", nLinha, oModel)
-
-If !Empty(cCC)
-    If SZ5->(DbSeek(xFilial("SZ5") + cCC))
-        oGrid:SetValue("ZO_DESCCC", SZ5->Z5_DESCRI)
+If !Empty(cCodPosto)
+    If !SZ1->(DbSeek(xFilial("SZ1") + cCodPosto))
+        Return .F.
     EndIf
 EndIf
+
+oModelSZN:LoadValue("ZN_DESCPOS", SZ1->Z1_DESCRI)
+oModelSZN:LoadValue("ZN_PROJETO", AllTrim(SZ1->Z1_PROJET))
+
+Return(.T.)
+
+/*/{Protheus.doc} VlNumQQ2
+Valida o campo  Num. QQP (ZN_NUMQQP).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+User Function VlNumQQ2()
+
+Local oModel    := FWModelActive()
+Local oModelSZN := oModel:GetModel("ZNMASTER")
+Local cProjeto  := oModelSZN:GetValue("ZN_PROJETO")
+Local cNumQQP   := oModelSZN:GetValue("ZN_NUMQQP")
+
+Z43->(DbSetOrder(1)) //Projeto + Num.QQP
+
+If !Empty(cProjeto)
+    If !Z43->(DbSeek(xFilial("Z43") + cProjeto + cNumQQP))
+        Return .F.
+    EndIf
+EndIf
+
+Return(.T.)
+
+/*/{Protheus.doc} VlItQQ2
+Valida o campo  Item QQP.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+User Function VlItQQ2()
+
+Local oModel    := FWModelActive()
+Local oModelSZN := oModel:GetModel("ZNMASTER")
+Local oGrid     := oModel:GetModel("ZEDETAIL")
+Local cProjeto  := oModelSZN:GetValue("ZN_PROJETO")
+Local cNumQQP   := oModelSZN:GetValue("ZN_NUMQQP")
+Local nLinha    := oGrid:GetLine()
+Local cItem     := oGrid:GetValue("ZE_ITEM", nLinha, oModel)
+
+Z42->(DbSetOrder(3)) // Item QQP + Projeto + Num. do QQP
+
+If !Empty(cItem)
+    If !Z42->(DbSeek(xFilial("Z42") + cItem + cProjeto + cNumQQP))
+        Return .F.
+    EndIf
+EndIf
+
+oGrid:SetValue("ZE_DESCRI", Z42->Z42_DESC)
+
+Return(.T.)
+
+/*/{Protheus.doc} VldCC2
+Valida o campo  Num. QQP (ZN_NUMQQP).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+User Function VldCC2()
+
+Local oModel    := FWModelActive()
+Local oModelSZN := oModel:GetModel("ZNMASTER")
+Local oGrid     := oModel:GetModel("ZODETAIL")
+Local cCodPosto := oModelSZN:GetValue("ZN_CODPOST")
+Local nLinha    := oGrid:GetLine()
+Local cCC       := oGrid:GetValue("ZO_CC", nLinha, oModel)
+
+SZ5->(DbSetOrder(1)) // Cód.Posto + Centro de Custo
+
+If !Empty(cCC)
+    If !SZ5->(DbSeek(xFilial("SZ5") + cCodPosto + cCC))
+        Return .F.
+    EndIf
+EndIf
+
+oGrid:SetValue("ZO_DESCCC", SubStr(SZ5->Z5_DESCRI,1,150))
+
+Return(.T.)
+
+/*/{Protheus.doc} VldLoc2
+Valida o campo Localidade.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+User Function VldLoc2()
+
+Local oModel   := FWModelActive()
+Local oGrid    := oModel:GetModel("ZSDETAIL")
+Local nLinha   := oGrid:GetLine()
+Local cLocalid := oGrid:GetValue("ZS_LOCALID", nLinha, oModel)
+
+SZ2->(DbSetOrder(2)) // Localidade
+
+If !Empty(cLocalid)
+    If !SZ2->(DbSeek(xFilial("SZ5") + cLocalid))
+        Return .F.
+    EndIf
+EndIf
+
+oGrid:SetValue("ZS_DESCLOC", SZ2->Z2_DESCRI)
 
 Return(.T.)
 

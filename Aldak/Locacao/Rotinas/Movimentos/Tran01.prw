@@ -335,6 +335,8 @@ Local nQuant     := 0
 Local cNumSeq    := ""
 Local cDescri    := ""
 Local cLocaliz   := ""
+Local dDtBaseDev := Ctod("15/" + StrZero(Month(dDataBase),2) + "/" + AllTrim(Str(Year(dDataBase))))
+Local dDtBaseEnt := Ctod("16/" + StrZero(Month(dDataBase),2) + "/" + AllTrim(Str(Year(dDataBase))))
 
 SB1->(DbSetOrder(1)) // Codigo
 SZI->(DbSetOrder(5)) // ISSI + Documento + Item
@@ -404,6 +406,7 @@ If nOperation == MODEL_OPERATION_INSERT
         SZI->ZI_DATAMOV := dDataBase
         SZI->ZI_DESCRI  := cDescri
         SZI->ZI_NUMSEQ  := cNumSeq
+        SZI->ZI_DTBASE  := dDtBaseDev
         MsUnlock()
     Next nX
 
@@ -477,6 +480,7 @@ If nOperation == MODEL_OPERATION_INSERT
         SZI->ZI_DATAMOV := dDataBase
         SZI->ZI_DESCRI  := cDescri
         SZI->ZI_NUMSEQ  := cNumSeq
+        SZI->ZI_DTBASE  := dDtBaseEnt
         MsUnlock()
     Next nX
 

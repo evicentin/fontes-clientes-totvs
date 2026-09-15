@@ -52,6 +52,8 @@ Local oStruSZB := FWFormStruct(1, "SZB")
 
 oModel := MPFormModel():New("CADCCM", /*bPreValidacao*/, /*bPosValidacao*/, { |oMdl| AtuaDescri( oMdl ) }, /*bCancel*/ )
 
+oStruSZ5:SetProperty('Z5_CC', MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_ValidCC()"))
+
 oModel:AddFields("SZ5MASTER",, oStruSZ5)
 
 oModel:AddGrid("SZBDETAIL", "SZ5MASTER", oStruSZB)
@@ -97,6 +99,27 @@ oView:SetOwnerView("VIEW_SZ5", "CABEC")
 oView:SetOwnerView("VIEW_SZB", "GRID")
 
 Return(oview)
+
+/*/{Protheus.doc} VlCdPost
+Gatilhos do campo código do posto (ZN_CODPOST).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+User Function ValidCC()
+
+Local oModel    := FWModelActive()
+Local oModelSZ5 := oModel:GetModel("SZ5MASTER")
+Local cCC       := oModelSZ5:GetValue("Z5_CC")
+
+SZ5->(DbSetOrder(1)) //Cód.Posto + Centro de Custo
+
+If !Empty(cCC)
+    oModelSZ5:LoadValue("Z5_CC", AllTrim(cCC))
+EndIf
+
+Return(.T.)
 
 /*/{Protheus.doc} VIEWDEF
 Atualiza o campo da descriçao do CC.

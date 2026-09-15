@@ -47,6 +47,7 @@ ADD OPTION aRotina TITLE "Pesq. Patrimonio"	  ACTION "U_PesqPatrim"   OPERATION 
 ADD OPTION aRotina TITLE "Limpar Filtro"	  ACTION "U_LimpaFiltro"  OPERATION 1 ACCESS 0 
 ADD OPTION aRotina TITLE "Estornar"           ACTION "VIEWDEF.MOVLOC" OPERATION 5 ACCESS 0
 ADD OPTION aRotina TITLE "Substituir"         ACTION "U_MOVSUBS"   	  OPERATION 1 ACCESS 0 
+ADD OPTION aRotina TITLE "Alt. Data Base"     ACTION "U_MVDTBAS"      OPERATION 1 ACCESS 0 
 ADD OPTION aRotina TITLE "Devolver"		      ACTION "U_MovDev"   	  OPERATION 1 ACCESS 0 
 ADD OPTION aRotina TITLE "Termo Entrega"	  ACTION "U_TermoEnt" 	  OPERATION 1 ACCESS 0 
 ADD OPTION aRotina TITLE "Termo Subst."	      ACTION "U_TermoSubst"	  OPERATION 1 ACCESS 0 
@@ -69,6 +70,7 @@ Local oStruSZI := FWFormStruct(1, "SZI")
 
 oStruSZH:SetProperty('ZH_EMISSAO', MODEL_FIELD_INIT , {|| dDataBase})
 oStruSZH:SetProperty('ZH_STATUS', MODEL_FIELD_INIT , {|| 'A'})
+oStruSZI:SetProperty('ZI_DTBASE', MODEL_FIELD_INIT , {|| dDataBase})
 
 oStruSZI:SetProperty("ZI_PRODUTO", MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_GetLineData()"))
 
@@ -99,10 +101,10 @@ View do MVC.
 Static Function ViewDef()
 
 Local oView
-Local oStruSZH   := FWFormStruct(2, "SZH", {|cCampo| AllTrim(cCampo)+"|"$ "ZH_STATUS|ZH_DOC|ZH_EMISSAO|ZH_CODPOST|ZH_DESCPOS|ZH_LOCALID|ZH_DESCLOC|"+;
+Local oStruSZH   := FWFormStruct(2, "SZH", {|cCampo| AllTrim(cCampo)+"|"$ "ZH_DOC|ZH_EMISSAO|ZH_CODPOST|ZH_DESCPOS|ZH_LOCALID|ZH_DESCLOC|"+;
                                                                           "ZH_CC|ZH_DESCCC|ZH_CODRESP|ZH_DESCRES|ZH_CHAMADO|ZH_MOTIVO|ZH_STATUS|ZH_DPSCM|"})
 Local oStruSZI   := FWFormStruct(2, "SZI", {|cCampo| !AllTrim(cCampo)+"|"$ "ZI_CODPOST|ZI_LOCALID|ZI_DOC|ZI_DATADEV|ZI_PERDA|ZI_DPSMI|ZI_DPSEQ|ZI_DPSKIT|"+;
-                                                                            "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|"})
+                                                                            "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTBASE|"})
 Local oModel     := FWLoadModel("MOVLOC")
 
 oView := FWFormView():New()
