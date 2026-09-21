@@ -28,6 +28,7 @@ Private lAddLine   := .F.
 // aRefSubs[n][4] - ISSI do patrimonio original (ZI_ISSI)
 // aRefSubs[n][5] - Agrupador do kit (mesma chamada de LoadKit)
 // aRefSubs[n][6] - .T. quando a linha e a ancora (item pai) do agrupamento
+// aRefSubs[n][7] - Documento de origem do item substituido (ZI_DOC)
 Private aRefSubs   := {}
 
 // Sequencial usado para gerar o agrupador de cada kit carregado.
@@ -117,8 +118,20 @@ oModel:AddFields("SZHMASTER",, oStruSZH)
 oModel:AddGrid("SZIORIGEM", "SZHMASTER", oSZIOri)
 oModel:AddGrid("SZISUBST", "SZHMASTER", oSZISub)
 
-oModel:SetRelation("SZIORIGEM", {{"ZI_FILIAL", "xFilial('SZI')"}, {"ZI_CODPOST", "ZH_CODPOST"}, {"ZI_LOCALID", "ZH_LOCALID"},;
-                                 {"ZI_DOC", "ZH_DOC"}}, SZI->(IndexKey(1)))
+// Troca de acessorios / mv_par01 == 3)
+// O SetRelation original do SZIORIGEM amarra ZI_CODPOST + ZI_LOCALID + ZI_DOC ao
+// cabecalho SZHMASTER. Com o documento fixado na relacao, o SetLoadFilter por
+// ZI_ISSI so consegue enxergar o que esta gravado NAQUELE ZI_DOC; o acessorio da
+// mesma ISSI gravado em outro documento nunca era alcancado e o grid de origem
+// vinha vazio mesmo com a ISSI correta. Por isso, em mv_par01 == 3, a relacao
+// deixa de fixar o documento e a selecao do conjunto fica por conta do filtro.
+If mv_par01 == 3
+    // Acessorios: relaciona somente a filial; ZI_ISSI vem pelo SetLoadFilter.
+    oModel:SetRelation("SZIORIGEM", {{"ZI_FILIAL", "xFilial('SZI')"}}, SZI->(IndexKey(1)))
+Else
+    oModel:SetRelation("SZIORIGEM", {{"ZI_FILIAL", "xFilial('SZI')"}, {"ZI_CODPOST", "ZH_CODPOST"}, {"ZI_LOCALID", "ZH_LOCALID"},;
+                                     {"ZI_DOC", "ZH_DOC"}}, SZI->(IndexKey(1)))
+EndIf
 
 // Filtro do grid de origem: sempre traz apenas itens ativos (nao devolvidos),
 // combinado com a regra de patrimonio conforme o tipo de substituicao (mv_par01).
@@ -149,13 +162,14 @@ If mv_par01 == 3
 
     oModel:GetModel("SZISUBST"):SetLoadFilter(Nil, cFilSub)
 
-    oModel:SetRelation("SZISUBST", {{"ZI_FILIAL", "xFilial('SZI')"}, {"ZI_CODPOST", "ZH_CODPOST"}, {"ZI_LOCALID", "ZH_LOCALID"},;
-                                    {"ZI_DOC", "ZH_DOC"}}, SZI->(IndexKey(1)))
+    // Mesmo tratamento do grid de origem: sem fixar ZI_DOC, a lista de
+    // substitutos enxerga todos os acessorios da ISSI, e nao so os do documento
+    // do cabecalho. A selecao do conjunto fica por conta do SetLoadFilter.
+    oModel:SetRelation("SZISUBST", {{"ZI_FILIAL", "xFilial('SZI')"}}, SZI->(IndexKey(1)))
 EndIf
 
 oModel:SetPrimaryKey({})
 
-// oModel:GetModel("SZHMASTER"):SetOnlyView(.T.)
 oModel:GetModel("SZIORIGEM"):SetOnlyView(.T.)
 
 oModel:SetDescription("Substituição")
@@ -365,6 +379,7 @@ aRet[n][3] - ZI_PATRIM
 aRet[n][4] - ZI_ISSI
 aRet[n][5] - ZI_CODKIT
 aRet[n][6] - ZI_LOCALIZ
+aRet[n][7] - ZI_DOC (documento de origem do item)
 
 @author Ewerton Alex Vicentin
 @since 20/10/2025
@@ -387,7 +402,8 @@ For nX := 1 to Len(aPatOri)
                 aPatOri[nX][2],;
                 aPatOri[nX][3],;
                 aPatOri[nX][5],;
-                aPatOri[nX][7]})
+                aPatOri[nX][7],;
+                aPatOri[nX][8]})
 Next nX
 
 Return(aRet)
@@ -399,12 +415,14 @@ Registra a referência da linha substituta com o patrimônio original.
 @since 20/10/2025
 @version P12
 /*/
-Static Function MsvAddRef(nLinha, cItemOri, cPatOri, cIssiOri, cGrupo, lAncora)
+Static Function MsvAddRef(nLinha, cItemOri, cPatOri, cIssiOri, cGrupo, lAncora, cDocOri)
 
 Local nPos := aScan(aRefSubs, {|x| x[1] == nLinha})
 
 Default cGrupo  := ""
 Default lAncora := .T.
+// Sem documento informado vale o documento do cabeçalho (comportamento antigo).
+Default cDocOri := cDocumento
 
 If nPos > 0
     aRefSubs[nPos][2] := cItemOri
@@ -412,8 +430,9 @@ If nPos > 0
     aRefSubs[nPos][4] := cIssiOri
     aRefSubs[nPos][5] := cGrupo
     aRefSubs[nPos][6] := lAncora
+    aRefSubs[nPos][7] := cDocOri
 Else
-    AAdd(aRefSubs, {nLinha, cItemOri, cPatOri, cIssiOri, cGrupo, lAncora})
+    AAdd(aRefSubs, {nLinha, cItemOri, cPatOri, cIssiOri, cGrupo, lAncora, cDocOri})
 EndIf
 
 Return
@@ -515,7 +534,11 @@ If oGrid == Nil .or. nLinha < 1 .or. nLinha > oGrid:Length()
     Return("")
 EndIf
 
-cRet := AllTrim(oGrid:GetValue("ZI_ITEM", nLinha, oModel)) + "|" +;
+// ZI_DOC entra na chave: com as linhas de origem vindas de documentos
+// distintos (troca de acessorios pela ISSI), ZI_ITEM + ZI_CODKIT + ZI_PATRIM
+// pode colidir entre dois documentos diferentes.
+cRet := AllTrim(oGrid:GetValue("ZI_DOC", nLinha, oModel)) + "|" +;
+        AllTrim(oGrid:GetValue("ZI_ITEM", nLinha, oModel)) + "|" +;
         AllTrim(oGrid:GetValue("ZI_CODKIT", nLinha, oModel)) + "|" +;
         AllTrim(oGrid:GetValue("ZI_PATRIM", nLinha, oModel))
 
@@ -820,13 +843,66 @@ Next nX
 Return
 
 /*/{Protheus.doc} ValidaSubs
-Valida se o documento tem itens ativos.
+Valida se há itens ativos para a substituição.
+
+Kit (mv_par01 == 1) e patrimônio (mv_par01 == 2) continuam validando os itens do
+documento original (Cód.Posto + Localidade + Documento).
+
+Acessórios (mv_par01 == 3) são validados pela ISSI do patrimônio informado no
+Pergunte, e não pelo documento: basta existir acessório ativo (ZI_PATRIM vazio)
+com a mesma ISSI, esteja ele em qual documento estiver.
 
 @author Ewerton Alex Vicentin
 @since 20/10/2025
 @version P12
+
+@return logical, .T. quando há item ativo para substituir.
 /*/
 Static Function ValidaSubs()
+
+Local aArea   := GetArea()
+Local aAreaZI := SZI->(GetArea())
+Local nOrdZI  := SZI->(IndexOrd())
+Local lRet    := .F.
+
+If mv_par01 == 3
+    // Acessórios: a validação é pela ISSI do patrimônio informado.
+    lRet := MsvValAces()
+Else
+    lRet := MsvValDoc()
+EndIf
+
+// Devolve a SZI para a ordem / posição de quem chamou.
+SZI->(DbSetOrder(nOrdZI))
+
+RestArea(aAreaZI)
+RestArea(aArea)
+
+If !lRet
+    If mv_par01 == 3
+        Help(,, "SEMIT",, "Não há acessórios ativos para a ISSI " + AllTrim(cISSI) +;
+            " do patrimônio informado.", 1, 0)
+    Else
+        Help(,, "SEMIT",, "Esse documento não tem nenhum item ativo para ser substituído", 1, 0)
+    EndIf
+EndIf
+
+Return(lRet)
+
+/*/{Protheus.doc} MsvValDoc
+Valida os itens ativos do documento original (substituição de kit e de
+patrimônio).
+
+Mantém a varredura por Cód.Posto + Localidade + Documento; em mv_par01 == 2 só
+conta item com patrimônio.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@return logical, .T. quando há item ativo no documento.
+/*/
+Static Function MsvValDoc()
 
 Local lRet := .F.
 
@@ -848,31 +924,54 @@ While SZI->ZI_FILIAL == xFilial("SZI") .and.;
             SZI->(DbSkip())
             Loop
         EndIf
-    ElseIf mv_par01 == 3
-        If !Empty(SZI->ZI_PATRIM)
-            SZI->(DbSkip())
-            Loop
-        EndIf
-
-        // Somente os acessorios da ISSI do patrimonio informado.
-        If !Empty(cISSI) .and. AllTrim(SZI->ZI_ISSI) <> AllTrim(cISSI)
-            SZI->(DbSkip())
-            Loop
-        EndIf
     EndIf
 
     lRet := .T.
-
-    SZI->(DbSkip())
+    Exit
 End
 
-If !lRet
-    If mv_par01 == 3
-        Help(,, "SEMIT",, "O patrimônio informado não possui acessórios ativos para serem substituídos", 1, 0)
-    Else
-        Help(,, "SEMIT",, "Esse documento não tem nenhum item ativo para ser substituído", 1, 0)
-    EndIf
+Return(lRet)
+
+/*/{Protheus.doc} MsvValAces
+Valida se existe acessório ativo para a ISSI do patrimônio informado.
+
+Varre a SZI pela ordem 5 (ISSI + Documento + Item), sem amarrar Cód.Posto,
+Localidade nem Documento: aceita o primeiro item com ZI_STATUS == "A",
+ZI_PATRIM vazio e a mesma ISSI.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@return logical, .T. quando há acessório ativo para a ISSI.
+/*/
+Static Function MsvValAces()
+
+Local lRet := .F.
+
+If Empty(cISSI)
+    Return(.F.)
 EndIf
+
+SZI->(DbSetOrder(5)) // ISSI + Documento + Item
+
+SZI->(DbSeek(xFilial("SZI") + cISSI))
+While SZI->ZI_FILIAL == xFilial("SZI") .and.;
+    AllTrim(SZI->ZI_ISSI) == AllTrim(cISSI) .and. !SZI->(EOF())
+
+    If SZI->ZI_STATUS <> "A"
+        SZI->(DbSkip())
+        Loop
+    EndIf
+
+    If !Empty(SZI->ZI_PATRIM)
+        SZI->(DbSkip())
+        Loop
+    EndIf
+
+    lRet := .T.
+    Exit
+End
 
 Return(lRet)
 
@@ -886,6 +985,7 @@ aRet[n][4] - ZI_PRODUTO
 aRet[n][5] - ZI_CODKIT
 aRet[n][6] - ZI_DESCRI
 aRet[n][7] - ZI_LOCALIZ
+aRet[n][8] - ZI_DOC (documento de origem do item)
 
 @author Ewerton Alex Vicentin
 @since 20/10/2025
@@ -912,12 +1012,74 @@ If SZI->(DbSeek(xFilial("SZI") + cCodPost + cLocalid + cDocumento))
                         SZI->ZI_PRODUTO,;
                         SZI->ZI_CODKIT ,;
                         SZI->ZI_DESCRI ,;
-                        SZI->ZI_LOCALIZ})
+                        SZI->ZI_LOCALIZ,;
+                        SZI->ZI_DOC})
         EndIf
 
         SZI->(DbSkip())
     End
 EndIf
+
+RestArea(aAreaZI)
+RestArea(aArea)
+
+Return(aRet)
+
+/*/{Protheus.doc} MsvAcsIss
+Devolve os acessórios ativos (ZI_PATRIM vazio) da ISSI do patrimônio informado,
+independente do documento em que estejam gravados.
+
+aRet[n][1] - ZI_DOC
+aRet[n][2] - ZI_ITEM
+aRet[n][3] - ZI_PRODUTO
+aRet[n][4] - ZI_CODPOST
+aRet[n][5] - ZI_LOCALID
+aRet[n][6] - ZI_CODKIT
+
+Substitui a varredura antiga por Cód.Posto + Localidade + Documento (MsvAcsOri),
+que só enxergava o acessório gravado no documento do cabeçalho.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@return array, Acessórios ativos da ISSI.
+/*/
+Static Function MsvAcsIss()
+
+Local aArea   := GetArea()
+Local aAreaZI := SZI->(GetArea())
+Local nOrdZI  := SZI->(IndexOrd())
+Local cIssiPt := MsvIssPat()
+Local aRet    := {}
+
+If Empty(cIssiPt)
+    SZI->(DbSetOrder(nOrdZI))
+    RestArea(aAreaZI)
+    RestArea(aArea)
+    Return(aRet)
+EndIf
+
+SZI->(DbSetOrder(5)) // ISSI + Documento + Item
+
+If SZI->(DbSeek(xFilial("SZI") + cIssiPt))
+    While SZI->ZI_FILIAL == xFilial("SZI") .and.;
+        AllTrim(SZI->ZI_ISSI) == cIssiPt .and. !SZI->(EOF())
+
+        If SZI->ZI_STATUS == "A" .and. Empty(SZI->ZI_PATRIM)
+            AAdd(aRet, {SZI->ZI_DOC    ,;
+                        SZI->ZI_ITEM   ,;
+                        SZI->ZI_PRODUTO,;
+                        SZI->ZI_CODPOST,;
+                        SZI->ZI_LOCALID,;
+                        SZI->ZI_CODKIT})
+        EndIf
+
+        SZI->(DbSkip())
+    End
+EndIf
+
+SZI->(DbSetOrder(nOrdZI))
 
 RestArea(aAreaZI)
 RestArea(aArea)
@@ -1447,7 +1609,7 @@ Local nPosRef    := 0
 Local nPosOri    := 0
 Local aSaveLines := FWSaveRows()
 Local cIssiPat   := MsvIssPat()
-Local aAcsOri    := If(mv_par01 == 3, MsvAcsOri(), {})
+Local aAcsOri    := If(mv_par01 == 3, MsvAcsIss(), {})
 Local nLinAtiv   := 0
 Local lRet       := .T.
 
@@ -1506,7 +1668,7 @@ If nOperation == MODEL_OPERATION_UPDATE
 				// O produto substituto tem que pertencer aos acessórios ativos
 				// da ISSI selecionada no documento original.
 				If !Empty(cProduto) .and. Len(aAcsOri) > 0
-					If aScan(aAcsOri, {|x| AllTrim(x) == AllTrim(cProduto)}) == 0
+					If aScan(aAcsOri, {|x| AllTrim(x[3]) == AllTrim(cProduto)}) == 0
 						Help(,, "PRDNOISS",, "[Item: " + cItem + "] O produto [" + AllTrim(cProduto) +;
 							"] não pertence aos acessórios da ISSI [" + AllTrim(cIssiPat) + "].", 1, 0)
 						lRet := .F.
@@ -1763,6 +1925,7 @@ Local aIssiBx    := {}
 Local aItGrid    := {}
 Local lItGrid    := .F.
 Local cItGrid    := ""
+Local cDocGrd    := ""
 
 SZI->(DbSetOrder(5)) // ISSI + Documento + Item
 SZJ->(DbSetOrder(3)) // Patrimônio
@@ -1887,11 +2050,21 @@ If nOperation == MODEL_OPERATION_UPDATE
                 Loop
             EndIf
 
+            // A chave leva o documento de origem: com os acessorios vindos de
+            // documentos distintos (troca pela ISSI), ZI_ITEM isolado colide
+            // entre dois documentos e baixaria o item errado.
             cItGrid := AllTrim(oModelSZI:GetValue("ZI_ITEM", nX, oModel))
+            cDocGrd := AllTrim(oModelSZI:GetValue("ZI_DOC", nX, oModel))
 
             If Empty(cItGrid)
                 Loop
             EndIf
+
+            If Empty(cDocGrd)
+                cDocGrd := AllTrim(cDocumento)
+            EndIf
+
+            cItGrid := cDocGrd + "|" + cItGrid
 
             If aScan(aItGrid, {|x| AllTrim(x) == cItGrid}) == 0
                 AAdd(aItGrid, cItGrid)
@@ -1956,9 +2129,21 @@ If nOperation == MODEL_OPERATION_UPDATE
             While SZI->ZI_FILIAL == xFilial("SZI") .and.;
                 AllTrim(SZI->ZI_ISSI) == AllTrim(cIssiOri) .and. !SZI->(EOF())
 
-                If AllTrim(SZI->ZI_DOC) <> AllTrim(cDocumento) .or. SZI->ZI_STATUS <> "A"
-                    SZI->(DbSkip())
-                    Loop
+                // Kit / patrimonio (mv_par01 == 1 e 2): a baixa continua presa
+                // ao documento do cabecalho. Acessorios (mv_par01 == 3) sao
+                // localizados pela ISSI, portanto podem estar em outro
+                // documento; nesse caso o unico documento que NAO pode ser
+                // baixado e o que acabou de ser gerado (cNewDoc).
+                If mv_par01 == 3
+                    If AllTrim(SZI->ZI_DOC) == AllTrim(cNewDoc) .or. SZI->ZI_STATUS <> "A"
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
+                Else
+                    If AllTrim(SZI->ZI_DOC) <> AllTrim(cDocumento) .or. SZI->ZI_STATUS <> "A"
+                        SZI->(DbSkip())
+                        Loop
+                    EndIf
                 EndIf
 
                 // mv_par01 == 2: baixa somente a linha do patrimônio original
@@ -1998,7 +2183,7 @@ If nOperation == MODEL_OPERATION_UPDATE
                     // Só baixa o acessório que permaneceu no grid dos itens
                     // substitutos; o que o usuário deletou continua ativo no
                     // documento original (não muda status, não gera estoque).
-                    If lItGrid .and. aScan(aItGrid, {|x| AllTrim(x) == AllTrim(SZI->ZI_ITEM)}) == 0
+                    If lItGrid .and. aScan(aItGrid, {|x| AllTrim(x) == AllTrim(SZI->ZI_DOC) + "|" + AllTrim(SZI->ZI_ITEM)}) == 0
                         SZI->(DbSkip())
                         Loop
                     EndIf

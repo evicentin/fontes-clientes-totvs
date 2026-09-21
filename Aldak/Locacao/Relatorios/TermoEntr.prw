@@ -23,9 +23,21 @@ Default cCodPost := ""
 Default cLocalid := ""
 Default cDoc     := ""
 
-If !Empty(cCodPost) .and. !Empty(cLocalid) .and. !Empty(cDoc)
-    SZH->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento
-    If !SZH->(DbSeek(xFilial("SZH") + cCodPost + cLocalid + cDoc))
+// Quando o documento é informado pela rotina chamadora, o SZH TEM que ser
+// posicionado por ele. Não depender de Posto/Localidade: se qualquer um vier
+// vazio, o ponteiro residual da rotina chamadora cairia na crítica de status.
+If !Empty(cDoc)
+    If !Empty(cCodPost) .And. !Empty(cLocalid)
+        SZH->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento
+        lAchou := SZH->(DbSeek(xFilial("SZH") + cCodPost + cLocalid + cDoc))
+    EndIf
+
+    If !lAchou
+        SZH->(DbSetOrder(2)) // Documento
+        lAchou := SZH->(DbSeek(xFilial("SZH") + cDoc))
+    EndIf
+
+    If !lAchou
         MsgInfo("Documento não localizado.", "Atenção")
         RestArea(aAreaSZH)
         Return

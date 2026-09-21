@@ -185,7 +185,7 @@ BeginSQL Alias "Z42QRY"
 	WHERE
 		ZI_FILIAL = %xFilial:SZI% AND
 		ZI_PATRIM = %Exp:cPatrim% AND
-        ZI_STATUS = 'A' AND
+        ZI_STATUS IN ('A','P') AND
 		%NotDel%
 EndSQL
 

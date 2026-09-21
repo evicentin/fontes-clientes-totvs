@@ -49,9 +49,9 @@ ADD OPTION aRotina TITLE "Estornar"           ACTION "VIEWDEF.MOVLOC" OPERATION 
 ADD OPTION aRotina TITLE "Substituir"         ACTION "U_MOVSUBS"   	  OPERATION 1 ACCESS 0 
 ADD OPTION aRotina TITLE "Alt. Data Base"     ACTION "U_MVDTBAS"      OPERATION 1 ACCESS 0 
 ADD OPTION aRotina TITLE "Devolver"		      ACTION "U_MovDev"   	  OPERATION 1 ACCESS 0 
-ADD OPTION aRotina TITLE "Termo Entrega"	  ACTION "U_TermoEnt" 	  OPERATION 1 ACCESS 0 
-ADD OPTION aRotina TITLE "Termo Subst."	      ACTION "U_TermoSubst"	  OPERATION 1 ACCESS 0 
-ADD OPTION aRotina TITLE "Termo Devol."	      ACTION "U_TermoDevol"   OPERATION 1 ACCESS 0 
+ADD OPTION aRotina TITLE "Termo Entrega"	  ACTION "U_TermoEnt()"	  OPERATION 1 ACCESS 0 
+ADD OPTION aRotina TITLE "Termo Subst."	      ACTION "U_TermoSubst()" OPERATION 1 ACCESS 0 
+ADD OPTION aRotina TITLE "Termo Devol."	      ACTION "U_TermoDevol()" OPERATION 1 ACCESS 0 
 
 Return(aRotina)
 

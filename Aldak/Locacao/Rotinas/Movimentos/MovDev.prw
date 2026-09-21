@@ -60,6 +60,11 @@ If !Empty(mv_par01)
         Return
     EndIf
 
+    If aDoc[2] == "P"
+        MsgInfo('Esse Patrimônio está pausado, reative-o antes de devolver.', "Atenção")
+        Return
+    EndIf
+
     If !SZH->(DbSeek(xFilial("SZH") + aDoc[1]))
         MsgInfo("Documento não encontrado!", "Atenção")
         Return

@@ -3,6 +3,8 @@
 
 // Opcao corrente do radio de impressao dos termos (1 = Entrega, 2 = Devolucao).
 Static nRadOpc := 1
+// Indice do documento selecionado no combo de impressao dos termos (posicao em aLote).
+Static nCmbDoc := 1
 
 /*/{Protheus.doc} TRAN02
 Transferência em lote de centro de custo / responsável.
@@ -350,7 +352,6 @@ Static  Function VldCCNew()
 Local oModel    := FWModelActive()
 Local oModelSZH := oModel:GetModel("SZHTMP")
 Local cPosto    := AllTrim(oModelSZH:GetValue("ZH_CODPOST"))
-Local cCCOri    := AllTrim(oModelSZH:GetValue("ZH_CC"))
 Local cCCNew    := AllTrim(oModelSZH:GetValue("ZH_CCNEW"))
 
 SZ5->(DbSetOrder(1)) // Cod.posto + Cód. C.C.
@@ -359,11 +360,6 @@ If !Empty(cCCNew)
     If !SZ5->(DbSeek(xFilial("SZ5") + cPosto + cCCNew))
         Return .F.
     EndIf
-EndIf
-
-If !Empty(cCCOri) .And. cCCOri == cCCNew
-    Help(, , "TRAN02", , "O novo CC deve ser diferente do CC de origem.", 1, 0)
-    Return .F.
 EndIf
 
 oModelSZH:LoadValue("ZH_DSCCNEW", Posicione("SZ5", 1, xFilial("SZ5") + cCCNew, "Z5_DESCRI"))
@@ -385,7 +381,6 @@ Static Function VldRspNew()
 Local oModel    := FWModelActive()
 Local oModelSZH := oModel:GetModel("SZHTMP")
 Local cPosto    := oModelSZH:GetValue("ZH_CODPOST")
-Local cRespOri  := oModelSZH:GetValue("ZH_CODRESP")
 Local cRespNew  := oModelSZH:GetValue("ZH_RESPNEW")
 
 SZ0->(DbSetOrder(1)) // Cod.posto + Cód. responsável
@@ -394,11 +389,6 @@ If !Empty(cRespNew)
     If !SZ0->(DbSeek(xFilial("SZ0") + cPosto + cRespNew))
         Return .F.
     EndIf
-EndIf
-
-If !Empty(cRespOri) .And. cRespOri == cRespNew
-    Help(, , "TRAN02", , "O novo responsavel deve ser diferente do responsavel de origem.", 1, 0)
-    Return .F.
 EndIf
 
 oModelSZH:LoadValue("ZH_NOME", Posicione("SZ0", 1, xFilial("SZ0") + cPosto + cRespNew, "Z0_NOME"))
@@ -624,9 +614,9 @@ EndIf
 
 cMsg := "Transferencia concluida. Total de documentos transferidos: " + AllTrim(Str(Len(aGerados))) + CRLF + CRLF
 
-For nX := 1 To Len(aGerados)
-    cMsg += AllTrim(aGerados[nX, 1]) + " -> Entrega [" + AllTrim(aGerados[nX, 2]) + "] - Devolucao [" + AllTrim(aGerados[nX, 3]) + "]" + CRLF
-Next nX
+// For nX := 1 To Len(aGerados)
+//     cMsg += AllTrim(aGerados[nX, 1]) + " -> Entrega [" + AllTrim(aGerados[nX, 2]) + "] - Devolucao [" + AllTrim(aGerados[nX, 3]) + "]" + CRLF
+// Next nX
 
 aDocOri := aGerados
 
@@ -903,7 +893,12 @@ Return aRet
 Pergunta qual termo deve ser impresso apos a transferencia em lote.
 Recebe a lista de pares gerados em AtuaLote:
 {Doc.Origem, Novo Doc.Entrega, Doc.Devolucao, ZH_CODPOST, ZH_LOCALID}.
-Sair do dialogo nao desfaz a gravacao ja confirmada.
+
+A impressao e feita documento a documento: o combo (CmbDoc) escolhe UM par do
+lote e o radio (RadOpc) o tipo de termo (1 = Entrega, 2 = Devolucao). Cada clique
+no botao Imprimir imprime apenas o documento selecionado e mantem o dialogo
+aberto, permitindo repetir a operacao para os demais documentos. Sair do dialogo
+nao desfaz a gravacao ja confirmada.
 
 @param aLote Lista de pares (documento original devolvido -> documento novo de entrega)
 @return Nil
@@ -917,29 +912,106 @@ Static Function DlgTermos(aLote)
 Local oDlg
 Local oSay1
 Local oSay2
+Local oSay3
+Local oCmbDoc
 Local oRadio
 Local oBtnImp
 Local oBtnSai
 Local aOpcoes := {"Entrega", "Devolução"}
+Local aItens  := {}
 
 Default aLote := {}
 
-DEFINE MSDIALOG oDlg TITLE "Imprimir Termo?" FROM 000, 000 TO 145, 250 COLORS 0, 16777215 PIXEL
+// Sem lote gerado nao ha o que imprimir: o combo nao tem o que montar.
+If Empty(aLote)
+    MsgInfo("Não há documentos gerados nessa transferência.", "Atenção")
+    Return
+EndIf
 
-@ 005, 005 SAY oSay1 PROMPT "Selecione o termo que deseja imprimir:" SIZE 120, 007 OF oDlg COLORS 0, 16777215 PIXEL
-@ 014, 005 SAY oSay2 PROMPT "Documentos transferidos: " + AllTrim(Str(Len(aLote))) SIZE 120, 007 OF oDlg COLORS 0, 16777215 PIXEL
+// Descricoes dos documentos do lote, na mesma ordem de aLote.
+aItens := MntCmb(aLote)
+
+DEFINE MSDIALOG oDlg TITLE "Imprimir Termo?" FROM 000, 000 TO 190, 320 COLORS 0, 16777215 PIXEL
+
+@ 005, 005 SAY oSay1 PROMPT "Selecione o termo que deseja imprimir:" SIZE 150, 007 OF oDlg COLORS 0, 16777215 PIXEL
+@ 014, 005 SAY oSay2 PROMPT "Documentos transferidos: " + AllTrim(Str(Len(aLote))) SIZE 150, 007 OF oDlg COLORS 0, 16777215 PIXEL
+
+@ 026, 005 SAY oSay3 PROMPT "Documento a imprimir:" SIZE 150, 007 OF oDlg COLORS 0, 16777215 PIXEL
+
+// O bSetGet e a unica fonte do estado: gravado pelo CmbDoc() (indice em aLote) e
+// devolvido como a descricao correspondente, o que ja marca o 1o. documento.
+nCmbDoc := 1
+oCmbDoc := TComboBox():New(035, 005, {|u| CmbDoc(u, aItens), aItens[CmbDoc()]}, aItens, 150, 060, oDlg,,,,,, .T.)
 
 // O 4o. parametro (bSetGet) e a unica fonte do estado: chamado com Nil devolve a opcao
 // corrente, o que ja deixa a 1a. opcao marcada na montagem do objeto.
 nRadOpc := 1
-oRadio  := TRadMenu():New(026, 005, aOpcoes, {|u| RadOpc(u)}, oDlg,,,,,,,, 100, 025,,,, .T.)
+oRadio  := TRadMenu():New(055, 005, aOpcoes, {|u| RadOpc(u)}, oDlg,,,,,,,, 100, 025,,,, .T.)
 
-@ 058, 032 BUTTON oBtnImp PROMPT "Imprimir" ACTION(ImpTermo(RadOpc(), aLote)) SIZE 037, 012 OF oDlg PIXEL
-@ 058, 074 BUTTON oBtnSai PROMPT "Sair" ACTION(oDlg:End()) SIZE 037, 012 OF oDlg PIXEL
+@ 080, 040 BUTTON oBtnImp PROMPT "Imprimir" ACTION(ImpTermo(RadOpc(), aLote, CmbDoc())) SIZE 037, 012 OF oDlg PIXEL
+@ 080, 090 BUTTON oBtnSai PROMPT "Sair" ACTION(oDlg:End()) SIZE 037, 012 OF oDlg PIXEL
 
 ACTIVATE MSDIALOG oDlg CENTERED
 
 Return
+
+/*/{Protheus.doc} CmbDoc
+Get/Set do documento selecionado no combo de impressao dos termos.
+Chamada sem parametro (ou com Nil, como o TComboBox faz na montagem) devolve o
+indice corrente; chamada com um numero grava o indice; chamada com a descricao
+selecionada resolve o indice dentro de aItens.
+
+@param uOpc   Indice (N) ou descricao selecionada (C)
+@param aItens Descricoes do combo, na mesma ordem de aLote
+@return nCmbDoc Indice corrente
+
+@author Ewerton Alex Vicentin
+@since 10/09/2026
+@version P12
+/*/
+Static Function CmbDoc(uOpc, aItens)
+
+Local nPos := 0
+
+Default aItens := {}
+
+If uOpc <> Nil
+    If ValType(uOpc) == "N" .And. uOpc > 0
+        nCmbDoc := uOpc
+    ElseIf ValType(uOpc) == "C" .And. !Empty(aItens)
+        nPos := aScan(aItens, {|x| AllTrim(x) == AllTrim(uOpc)})
+
+        If nPos > 0
+            nCmbDoc := nPos
+        EndIf
+    EndIf
+EndIf
+
+Return nCmbDoc
+
+/*/{Protheus.doc} MntCmb
+Monta as descricoes dos documentos do lote para o combo, na mesma ordem de aLote
+e com a mesma semantica da mensagem montada em AtuaLote.
+
+@param aLote Lista {Doc.Origem, Novo Doc.Entrega, Doc.Devolucao, ZH_CODPOST, ZH_LOCALID}
+@return aRet Array de descricoes
+
+@author Ewerton Alex Vicentin
+@since 10/09/2026
+@version P12
+/*/
+Static Function MntCmb(aLote)
+
+Local aRet := {}
+Local nX   := 0
+
+Default aLote := {}
+
+For nX := 1 To Len(aLote)
+    AAdd(aRet, AllTrim(aLote[nX, 1]) + " -> Entrega " + AllTrim(aLote[nX, 2]) + " / Devolucao " + AllTrim(aLote[nX, 3]))
+Next nX
+
+Return aRet
 
 /*/{Protheus.doc} RadOpc
 Get/Set da opcao selecionada no radio de impressao dos termos.
@@ -962,44 +1034,53 @@ EndIf
 Return nRadOpc
 
 /*/{Protheus.doc} ImpTermo
-Dispara a impressao do termo escolhido para cada documento do lote, sem fechar
-o dialogo. Usa as mesmas UFs de termo chamadas pela TRAN01.
+Dispara a impressao do termo escolhido para UM unico documento do lote (o que
+esta selecionado no combo), sem fechar o dialogo. Usa as mesmas UFs de termo
+chamadas pela TRAN01.
 
-@param nOpc  Opcao escolhida (1 = Entrega, 2 = Devolucao)
+Quando a opcao do radio ou o indice do documento vierem invalidos, apenas critica
+e retorna sem imprimir, mantendo o dialogo aberto.
+
+@param nOpc  Opcao escolhida no radio (1 = Entrega, 2 = Devolucao)
 @param aLote Lista {Doc.Origem, Novo Doc.Entrega, Doc.Devolucao, ZH_CODPOST, ZH_LOCALID}
+@param nItem Indice do documento selecionado no combo (posicao em aLote)
 @return Nil
 
 @author Ewerton Alex Vicentin
 @since 10/09/2026
 @version P12
 /*/
-Static Function ImpTermo(nOpc, aLote)
+Static Function ImpTermo(nOpc, aLote, nItem)
 
-Local nX := 0
-
-Default nOpc  := 1
+Default nOpc  := 0
 Default aLote := {}
+Default nItem := 0
 
 If Empty(aLote)
     MsgInfo("Não há documentos gerados nessa transferência.", "Atenção")
     Return
 EndIf
 
-For nX := 1 To Len(aLote)
-    If nOpc == 1
-        If Empty(aLote[nX, 2])
-            MsgInfo("Não há documento de entrega gerado para [" + AllTrim(aLote[nX, 1]) + "].", "Atenção")
-        Else
-            U_TermoEntr(aLote[nX, 4], aLote[nX, 5], aLote[nX, 2])
-        EndIf
-    ElseIf nOpc == 2
-        If Empty(aLote[nX, 3])
-            MsgInfo("Não há documento de devolução gerado para [" + AllTrim(aLote[nX, 1]) + "].", "Atenção")
-        Else
-            U_TermoDevol(aLote[nX, 4], aLote[nX, 5], aLote[nX, 3])
-        EndIf
+// Sem tipo de termo ou sem documento selecionado nao ha o que imprimir: critica e
+// mantem o dialogo aberto para o usuario escolher.
+If (nOpc <> 1 .And. nOpc <> 2) .Or. nItem <= 0 .Or. nItem > Len(aLote)
+    Help(, , "TRAN02", , "Selecione o documento e o tipo de termo.", 1, 0)
+    Return
+EndIf
+
+If nOpc == 1
+    If Empty(aLote[nItem, 2])
+        MsgInfo("Não há documento de entrega gerado para [" + AllTrim(aLote[nItem, 1]) + "].", "Atenção")
+    Else
+        U_TermoEntr(aLote[nItem, 4], aLote[nItem, 5], aLote[nItem, 2])
     EndIf
-Next nX
+ElseIf nOpc == 2
+    If Empty(aLote[nItem, 3])
+        MsgInfo("Não há documento de devolução gerado para [" + AllTrim(aLote[nItem, 1]) + "].", "Atenção")
+    Else
+        U_TermoDevol(aLote[nItem, 4], aLote[nItem, 5], aLote[nItem, 3])
+    EndIf
+EndIf
 
 Return
 

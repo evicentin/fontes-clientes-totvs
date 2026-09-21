@@ -11,16 +11,28 @@ User Function TermoDevol(cCodPost, cLocalid, cDoc)
 
 Local oReport
 Local aAreaSZH := SZH->(GetArea())
+Local lAchou   := .F.
 
 Default cCodPost := ""
 Default cLocalid := ""
 Default cDoc     := ""
 
-// Quando a chave é informada pela rotina chamadora, posiciona o SZH.
-If !Empty(cCodPost) .And. !Empty(cLocalid) .And. !Empty(cDoc)
-    SZH->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento
-    If !SZH->(DbSeek(xFilial("SZH") + cCodPost + cLocalid + cDoc))
-        MsgInfo("Documento não localizado para impressão do Termo de Devolução.", "Atenção")
+// Quando o documento é informado pela rotina chamadora, o SZH TEM que ser
+// posicionado por ele. Não depender de Posto/Localidade: se qualquer um vier
+// vazio, o ponteiro residual da rotina chamadora cairia na crítica de status.
+If !Empty(cDoc)
+    If !Empty(cCodPost) .And. !Empty(cLocalid)
+        SZH->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento
+        lAchou := SZH->(DbSeek(xFilial("SZH") + cCodPost + cLocalid + cDoc))
+    EndIf
+
+    If !lAchou
+        SZH->(DbSetOrder(2)) // Documento
+        lAchou := SZH->(DbSeek(xFilial("SZH") + cDoc))
+    EndIf
+
+    If !lAchou
+        MsgInfo("Documento " + AllTrim(cDoc) + " não localizado para impressão do Termo de Devolução.", "Atenção")
         RestArea(aAreaSZH)
         Return
     EndIf
