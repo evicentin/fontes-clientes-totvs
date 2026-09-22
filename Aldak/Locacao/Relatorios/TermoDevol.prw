@@ -158,6 +158,9 @@ For nX := 1 to 4
 
     oReport:ThinLine()
 
+    oReport:Say(oreport:Row(), 10, "Documento       : " + cDocumento)
+    oReport:SkipLine(1)
+
     oReport:Say(oreport:Row(), 10, "Centro de Custo : " + cCC)
     oReport:SkipLine(1)
 
@@ -185,9 +188,10 @@ For nX := 1 to 4
     oReport:Say(oreport:Row(), 10, "Data            : " + DtoC(SZH->ZH_EMISSAO) + " Operador: " + cUserName)
     oReport:SkipLine(1)
 
-    oReport:ThinLine()
-
     oReport:Say(oreport:Row(), 10, "Motivo          :" + SZH->ZH_MOTIVO)
+    oReport:SkipLine(1)
+
+    oReport:Say(oreport:Row(), 10, "Chamado         :" + SZH->ZH_CHAMADO)
     oReport:SkipLine(1)
 
     oSection2:Init()

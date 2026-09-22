@@ -514,8 +514,7 @@ For nX := 1 to Len(aNF)
 
 				SB1->(DbSeek(xFilial("SB1") + SD2->D2_COD))
 
-				// Se existir na ST9 é porque controla patrimônio.
-				If ST9->(DbSeek(xFilial("ST9") + SD2->D2_COD))
+				If U_TemPatrim(SD2->D2_COD)
 					cPatrim := "S"
 
 					Z01->(DbSeek(xFilial("Z01") + SD2->D2_PEDIDO + SD2->D2_ITEMPV + SD2->D2_COD))
@@ -523,6 +522,7 @@ For nX := 1 to Len(aNF)
 						Z01->Z01_PEDIDO == SD2->D2_PEDIDO .and.;
 						Z01->Z01_ITEMPD == SD2->D2_ITEMPV .and.; 
 						Z01->Z01_PRODUT == SD2->D2_COD .and. !Z01->(EOF())
+
 						RecLock("SZJ", .T.)
 						SZJ->ZJ_FILIAL  := xFilial("SZJ")
 						SZJ->ZJ_CODPOST := mv_par11

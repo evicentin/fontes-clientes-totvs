@@ -2214,6 +2214,10 @@ If nOperation == MODEL_OPERATION_UPDATE
                     SZM->ZM_CODPOST := cCodPost
                     SZM->ZM_LOCALID := cLocalid
                     SZM->ZM_DOC     := SZI->ZI_DOC
+                    // trazer o documento que gerou a perda
+                    // trazer o código do kit
+                    // trazer o valor calculado da perda
+                    // trazer a ISSI
                     SZM->ZM_DATA    := dDataBase
                     SZM->ZM_ITEM    := SZI->ZI_ITEM
                     SZM->ZM_PRODUTO := SZI->ZI_PRODUTO

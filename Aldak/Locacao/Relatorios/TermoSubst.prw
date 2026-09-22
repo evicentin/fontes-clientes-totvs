@@ -137,6 +137,9 @@ If SZI->(DbSeek(xFilial("SZI") + cDoc))
 
         oReport:ThinLine()
         
+        oReport:Say(oreport:Row(), 10, "Documento       : " + cDoc)
+        oReport:SkipLine(1)
+
         oReport:Say(oreport:Row(), 10, "Centro de Custo : " + cCC)
         oReport:SkipLine(1)
 
@@ -164,10 +167,11 @@ If SZI->(DbSeek(xFilial("SZI") + cDoc))
         oReport:Say(oreport:Row(), 10, "Data            : " + DtoC(SZH->ZH_EMISSAO) + " Operador: " + cUserName)
         oReport:SkipLine(1)
 
-        oReport:ThinLine()
-
         oReport:Say(oreport:Row(), 10, "Motivo          :" + cMotivo)
-        oReport:SkipLine(2)
+        oReport:SkipLine(1)
+
+        oReport:Say(oreport:Row(), 10, "Chamado         :" + SZH->ZH_CHAMADO)
+        oReport:SkipLine(1)
 
         oReport:PrtCenter("Substituídos") 
         oReport:SkipLine(1)
