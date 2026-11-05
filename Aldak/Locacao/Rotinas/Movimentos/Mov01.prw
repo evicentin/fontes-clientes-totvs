@@ -55,6 +55,8 @@ Local bValidProd := FWBuildFeature(STRUCT_FEATURE_VALID, "U_ValidProd()", .T.)
 Local bValidQtd  := FWBuildFeature(STRUCT_FEATURE_VALID, "U_ValidQtd()", .T.)
 
 oStruCab:SetProperty('ZU_DATA', MODEL_FIELD_INIT , {|| dDataBase})
+oStruCab:SetProperty("ZU_CODPOST", MODEL_FIELD_VALID, {|| VldPosto()})
+oStruCab:SetProperty("ZU_LOCALID", MODEL_FIELD_VALID, {|| VldLocal()})
 
 oStruDet:SetProperty("ZU_ARMORI", MODEL_FIELD_VALID, bValidOri)
 oStruDet:SetProperty("ZU_ARMDEST", MODEL_FIELD_VALID, bValidDest)
@@ -108,6 +110,70 @@ oView:SetOwnerView("VIEW_CAB", "CABEC")
 oView:SetOwnerView("VIEW_DET", "GRID")
 
 Return(oview)
+
+/*/{Protheus.doc} VldPosto
+Valida o código do posto (SZ1) e preenche ZU_DESCPOS.
+
+@version P12
+/*/
+Static Function VldPosto()
+
+Local oModel   := FWModelActive()
+Local oCab     := oModel:GetModel("SZUMASTER")
+Local cCodPost := oCab:GetValue("ZU_CODPOST")
+Local lRet     := .T.
+
+If Empty(cCodPost)
+    oCab:LoadValue("ZU_DESCPOS", "")
+    Return(lRet)
+EndIf
+
+SZ1->(DbSetOrder(1)) // Cód.Posto
+
+If SZ1->(DbSeek(xFilial("SZ1") + cCodPost))
+    oCab:LoadValue("ZU_DESCPOS", SZ1->Z1_DESCRI)
+Else
+    oCab:LoadValue("ZU_DESCPOS", "")
+    Help(,, "POSTNOEX",, "Posto inválido!", 1, 0)
+    lRet := .F.
+EndIf
+
+Return(lRet)
+
+/*/{Protheus.doc} VldLocal
+Valida a localidade do posto (SZ2) e preenche ZU_DESCLOC.
+
+@version P12
+/*/
+Static Function VldLocal()
+
+Local oModel   := FWModelActive()
+Local oCab     := oModel:GetModel("SZUMASTER")
+Local cCodPost := oCab:GetValue("ZU_CODPOST")
+Local cLocalid := oCab:GetValue("ZU_LOCALID")
+Local lRet     := .T.
+
+If Empty(cLocalid)
+    oCab:LoadValue("ZU_DESCLOC", "")
+    Return(lRet)
+EndIf
+
+If Empty(cCodPost)
+    Help(,, "POSTVAZIO",, "Informe primeiro o código do posto.", 1, 0)
+    Return(.F.)
+EndIf
+
+SZ2->(DbSetOrder(1)) // Cód.Posto + Localidade
+
+If SZ2->(DbSeek(xFilial("SZ2") + cCodPost + cLocalid))
+    oCab:LoadValue("ZU_DESCLOC", SZ2->Z2_DESCRI)
+Else
+    oCab:LoadValue("ZU_DESCLOC", "")
+    Help(,, "LOCNOEX",, "Localidade inválida para este posto!", 1, 0)
+    lRet := .F.
+EndIf
+
+Return(lRet)
 
 /*/{Protheus.doc} ValidOri
 Valida armazém de origem.
@@ -327,11 +393,12 @@ Local cProduto   := oGrid:GetValue("ZU_PRODUTO")
 Local cPatrim    := oGrid:GetValue("ZU_PATRIM")
 Local cArmOri    := oGrid:GetValue("ZU_ARMORI")
 Local cArmDest   := oGrid:GetValue("ZU_ARMDEST")
-Local nQuant   := oGrid:GetValue("ZU_QUANT")
+Local nQuant     := 0
 Local lRetorno   := .T.
 
 SZJ->(DbSetOrder(3)) // Patrimônio
 SZT->(DbSetOrder(1)) // Local
+SZF->(DbSetOrder(1)) // Cód.Posto + Localidade + Produto + Armazém
 
 If nOperation == MODEL_OPERATION_INSERT .or. nOperation == MODEL_OPERATION_UPDATE
     If SZT->(DbSeek(xFilial("SZT") + cArmDest))
@@ -341,16 +408,37 @@ If nOperation == MODEL_OPERATION_INSERT .or. nOperation == MODEL_OPERATION_UPDAT
         Endif
     EndIf
 
+    // Recheck de saldo por linha antes de qualquer baixa (evita saldo negativo e gravação parcial)
+    For nI := 1 To oGrid:Length()
+        oGrid:GoLine(nI)
+
+        If !oGrid:IsDeleted()
+            cProduto := oGrid:GetValue("ZU_PRODUTO", nI, oModel)
+            cArmOri  := oGrid:GetValue("ZU_ARMORI", nI, oModel)
+            nQuant   := oGrid:GetValue("ZU_QUANT", nI, oModel)
+
+            If !SZF->(DbSeek(xFilial("SZF") + cCodPost + cLocalid + cProduto + cArmOri)) .or. SZF->ZF_SALDO < nQuant
+                Help(,, "SALDOINS",, "Saldo insuficiente para o produto [" + AllTrim(cProduto) + "] no armazém [" + AllTrim(cArmOri) + "] (linha " + cValToChar(nI) + ").", 1, 0)
+                Return(.F.)
+            EndIf
+        EndIf
+    Next nI
+
 	For nI := 1 To oGrid:Length()
 		oGrid:GoLine(nI)
 
         if !oGrid:IsDeleted()
             cPatrim  := oGrid:GetValue("ZU_PATRIM", nI, oModel)
             cProduto := oGrid:GetValue("ZU_PRODUTO", nI, oModel)
+            cArmOri  := oGrid:GetValue("ZU_ARMORI", nI, oModel)
+            cArmDest := oGrid:GetValue("ZU_ARMDEST", nI, oModel)
+            nQuant   := oGrid:GetValue("ZU_QUANT", nI, oModel)
 
             If !oGrid:IsDeleted()
                 U_GravaEst(cCodPost, cLocalid, cProduto, cArmOri, nQuant, "S")
                 U_GravaEst(cCodPost, cLocalid, cProduto, cArmDest, nQuant, "E")
+
+                SZT->(DbSeek(xFilial("SZT") + cArmDest))
 
                 If SZJ->(DbSeek(xFilial("SZJ") + cPatrim))
                     RecLock("SZJ", .F.)

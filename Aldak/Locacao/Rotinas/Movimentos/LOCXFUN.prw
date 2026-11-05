@@ -763,3 +763,47 @@ EndIf
 Z42QRY->(DbCloseArea())
 
 Return(cNumQQP)
+
+*/------------------------------------------------------------------*/
+*/ Rotina: GrvLogUsr  												*/
+*/ Autor : Ewerton Vicentin											*/
+*/ Data  : 25/08/2026												*/
+*/------------------------------------------------------------------*/
+*/ Grava o log de alteração dos registros.                          */
+*/------------------------------------------------------------------*/
+User Function GrvLogUsr()
+Return CValToChar(USRFULLNAME(RETCODUSR())) + " - " + CValToChar(DATE()) + " - " + CValToChar(TIME())
+
+*/------------------------------------------------------------------*/
+*/ Rotina: CalcRes  												*/
+*/ Autor : Ewerton Vicentin											*/
+*/ Data  : 14/10/2026												*/
+*/------------------------------------------------------------------*/
+*/ Cálculo do ressarcimento.                                        */
+*/------------------------------------------------------------------*/
+User Function CalcRes(cProduto, dEntrega, cCodPosto)
+
+Local nValRef   := 0
+Local nTempoUso := Int(dDataBase - dEntrega)
+Local nValor    := 0
+Local nFator    := GetMV("LC_FATDEP",, 0.12)
+
+SZ1->(DbSetOrder(1)) // Cod. Posto
+Z61->(DbSetOrder(1)) // Contrato + Cod. Produto
+
+If SZ1->(DbSeek(xFilial("SZ1") + cCodPosto))
+    If !Empty(SZ1->Z1_PROJETO)
+        If Z61->(DbSeek(xFilial("Z61") + SZ1->Z1_PROJETO + cProduto))
+        
+            If dEntrega <= CtoD("31/12/2022")
+                nValRef := Z61->Z61_VL1
+            Else
+                nValRef := Z61->Z61_VL2
+            EndIf
+
+            nValor := nValRef * (1-(nTempoUso * nFator))
+        EndIf
+    EndIf
+EndIf
+
+Return(nValor)

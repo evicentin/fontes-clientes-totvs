@@ -15,6 +15,7 @@
 #define POSDESCRI   11
 #define POSNUMSEQ   12
 #define POSDOCORI   13
+#define POSDTORIG   14
 
 /*/{Protheus.doc} MOVDEV
 Substituiï¿½ï¿½o de Equipamentos.
@@ -362,7 +363,7 @@ Static Function MarkBrowse(oPanel)
 
 Local nX       := 0
 Local aTitles  := {"Item","Produto","Patrimônio","Num.Série","ISSI","KIT","Quantidade","Perda","Localização","Data Movimento","Descrição",;
-                   "Num.Seq.","Doc.Orig."}
+                   "Num.Seq.","Doc.Orig.","Dt. Origem"}
 Local aFields  := {}
 Local aColumns := {}
 
@@ -380,6 +381,7 @@ AAdd(aFields, {"ZI_DATAMOV", "D",   8, 0})
 AAdd(aFields, {"ZI_DESCRI" , "C", 120, 0})
 AAdd(aFields, {"ZI_NUMSEQ" , "C",   6, 0})
 AAdd(aFields, {"ZI_DOCORI" , "C",   6, 0})
+AAdd(aFields, {"ZI_DTORIG" , "D",   8, 0})
 AAdd(aFields, {"ZI_OK"     , "C",   2, 0})
 
 oTempTable := FWTemporaryTable():New(cAliasTemp, aFields)
@@ -656,6 +658,9 @@ Local cRespAtu  := ""
 Local cChamAtu  := ""
 Local cMotAtu   := ""
 Local cDocAtu   := ""
+Local cCodKit   := ""
+Local cISSI     := ""
+Local cDtOrig   := ""
 Local nQuant    := 0
 Local nPerda    := 0
 Local lRet      := .T.
@@ -724,9 +729,12 @@ For nX := 1 To Len(aItens)
     SZI->ZI_QUANT   := aItem[POSQUANT]
     SZI->ZI_PERDA   := aItem[POSPERDA]
     SZI->ZI_LOCALIZ := aItem[POSLOCALIZ]
-    SZI->ZI_DATAMOV := aItem[POSDATAMOV]
+    SZI->ZI_DATAMOV := dDatabase
     SZI->ZI_DESCRI  := aItem[POSDESCRI]
     SZI->ZI_NUMSEQ  := aItem[POSNUMSEQ]
+    SZI->ZI_DTORIG  := aItem[POSDTORIG]
+    SZI->ZI_DTBASE  := dDataBase
+    SZI->ZI_DADOS   := U_GrvLogUsr()
     MsUnlock()
 Next nX
 
@@ -742,6 +750,9 @@ For nX := 1 To Len(aItens)
     cISSIIt   := aItem[POSISSI]
     nQuant    := aItem[POSQUANT] - aItem[POSPERDA]
     nPerda    := aItem[POSPERDA]
+    cCodKit   := aItem[POSCODKIT]
+    cISSI     := aItem[POSISSI]
+    cDtOrig   := aItem[POSDTORIG]
 
     If SZI->(DbSeek(xFilial("SZI") + cISSIIt + cDocOri + cItem))
         // Tem saldo para devolver, registra.
@@ -759,12 +770,17 @@ For nX := 1 To Len(aItens)
             SZM->ZM_CODPOST := cCodPos
             SZM->ZM_LOCALID := cLocaliz
             SZM->ZM_DOC     := cDocAtu
+            SZM->ZM_DOCPERD := cNewDoc
+            SZM->ZM_CODKIT  := cCodKit
+            SZM->ZM_ISSI    := cISSI
+            SZM->ZM_VLUNIT  := U_CalcRes(cProduto, cDtOrig, cCodPos)
             SZM->ZM_DATA    := dDataBase
             SZM->ZM_ITEM    := cItem
             SZM->ZM_PRODUTO := cProduto
             SZM->ZM_PATRIM  := cPatrim
             SZM->ZM_NUMSER  := cNumSer
             SZM->ZM_QUANT   := nPerda
+            SZM->ZM_DADOS   := U_GrvLogUsr()
             MsUnlock()
         EndIf
 
@@ -883,7 +899,8 @@ While !(cAlias)->(EOF())
                       (cAlias)->ZI_DATAMOV,;
                       (cAlias)->ZI_DESCRI ,;
                       (cAlias)->ZI_NUMSEQ ,;
-                      (cAlias)->ZI_DOCORI })
+                      (cAlias)->ZI_DOCORI ,;
+                      (cAlias)->ZI_DTORIG })
     EndIf
 
     (cAlias)->(DbSkip())

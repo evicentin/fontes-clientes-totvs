@@ -17,8 +17,13 @@ oBrowse := FWMBrowse():New()
 oBrowse:SetAlias("SZN")
 oBrowse:SetDescription("Itens Recorrentes - Rateio")
 
-oBrowse:SetFilterDefault(If(Empty(cFilter), "ZN_TIPO == 'R'", " .and. ZN_TIPO == 'R'"))
+If Empty(cFilter)
+    cFilter := "ZN_TIPO == 'R'"
+Else
+    cFilter += " .and. ZN_TIPO == 'R'"
+EndIf
 
+oBrowse:SetFilterDefault(cFilter)
 oBrowse:Activate()
 
 Return
@@ -97,8 +102,8 @@ View do MVC.
 Static Function ViewDef()
 
 Local oView
-Local oStruSZN := FWFormStruct(2, "SZN", {|cCampo| !AllTrim(cCampo)+"|"$ "ZE_LOG|"})
-Local oStruSZE := FWFormStruct(2, "SZE", {|cCampo| AllTrim( cCampo )+"|"$ "ZE_ITREC|ZE_ITEM|ZE_DESCRI|ZE_QUANT|ZE_STATUS|ZE_DATAINI|ZE_DATAFIM|"})
+Local oStruSZN := FWFormStruct(2, "SZN", {|cCampo| !AllTrim(cCampo)+"|"$ "ZN_LOG|"})
+Local oStruSZE := FWFormStruct(2, "SZE", {|cCampo| AllTrim( cCampo )+"|"$ "ZE_ITREC|ZE_ITEM|ZE_DESCRI|ZE_QUANT|ZE_STATUS|ZE_DATAINI|ZE_DATAFIM|ZE_OBS|"})
 Local oStruSZO := FWFormStruct(2, "SZO", {|cCampo| AllTrim( cCampo )+"|"$ "ZO_CC|ZO_DESCCC|ZO_PERC|"})
 Local oStruSZS := FWFormStruct(2, "SZS", {|cCampo| AllTrim( cCampo )+"|"$ "ZS_LOCALID|ZS_DESCLOC|"})
 

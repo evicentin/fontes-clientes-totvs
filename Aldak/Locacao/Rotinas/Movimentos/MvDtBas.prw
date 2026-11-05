@@ -11,7 +11,7 @@ Alteração da Data Base (ZI_DTBASE) dos itens do movimento de locação.
 User Function MVDTBAS()
 
 Local cAdmins  := AllTrim(GetMv("LC_USERADM"))
-Local cUsuario := __cUserId
+Local cUsuario := RetCodUsr()
 
 If Empty(cAdmins) .or. !(cUsuario $ cAdmins)
 	Help(,, "SEMPERM",, "Usuário sem permissão para alterar a Data Base. Cadastre o usuário no parâmetro LC_USERADM.", 1, 0)
@@ -86,7 +86,7 @@ Local oView
 Local oStruSZH   := FWFormStruct(2, "SZH", {|cCampo| AllTrim(cCampo)+"|"$ "ZH_DOC|ZH_EMISSAO|ZH_CODPOST|ZH_DESCPOS|ZH_LOCALID|ZH_DESCLOC|"+;
                                                                           "ZH_CC|ZH_DESCCC|ZH_CODRESP|ZH_DESCRES|ZH_CHAMADO|ZH_MOTIVO|ZH_STATUS|ZH_DPSCM|"})
 Local oStruSZI   := FWFormStruct(2, "SZI", {|cCampo| !AllTrim(cCampo)+"|"$ "ZI_CODPOST|ZI_LOCALID|ZI_DOC|ZI_DATADEV|ZI_PERDA|ZI_DPSMI|ZI_DPSEQ|ZI_DPSKIT|"+;
-                                                                            "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|"})
+                                                                            "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTORIG|ZI_LOGDTBS|ZI_DATA|"})
 Local oModel     := FWLoadModel("MVDTBAS")
 
 oView := FWFormView():New()
@@ -137,6 +137,16 @@ Next nX
 FWRestRows(aSaveLines)
 
 Begin Sequence
+	// Grava o log de alteração do usuário (LOCXFUN.prw) no ZI_LOGDTBS dos itens antes do commit.
+	aSaveLines := FWSaveRows()
+	For nX := 1 to nLinhas
+		oModelSZI:GoLine(nX)
+		If !oModelSZI:IsDeleted()
+			oModelSZI:LoadValue("ZI_LOGDTBS", U_GrvLogUsr())
+		EndIf
+	Next nX
+	FWRestRows(aSaveLines)
+
 	If !(lRetorno := FWFormCommit(oModel))
 		cLogMdl := cValToChar(oModel:GetErrorMessage()[4]) + ' - '
 		cLogMdl += cValToChar(oModel:GetErrorMessage()[5]) + ' - '

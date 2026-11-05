@@ -79,6 +79,7 @@ Local cSupervisa := ""
 Local cDescKit   := ""
 Local cVia       := ""
 Local nPageWidth := 2300
+Local lPrtPerda  := .F.
 
 SB1->(DbSetOrder(1)) // Código
 SZ0->(DbSetOrder(1)) // Cod.posto + Cód. responsável
@@ -173,10 +174,63 @@ If SZI->(DbSeek(xFilial("SZI") + cDoc))
         oReport:Say(oreport:Row(), 10, "Chamado         :" + SZH->ZH_CHAMADO)
         oReport:SkipLine(1)
 
+        oSection2:Init()
+
+        // Perdas (mesma regra do Termo de Devolução: ZI_PERDA > 0).
+        lPrtPerda := .F.
+        SZI->(DbSeek(xFilial("SZI") + cCodPost + cLocalid + cDocOri))
+        While SZI->ZI_FILIAL == xFilial("SZI") .and.;
+            SZI->ZI_CODPOST == cCodPost .and.;
+            SZI->ZI_LOCALID == cLocalid .and.;
+            SZI->ZI_DOC == cDocOri .and. !SZI->(EOF())
+
+            If oReport:Cancel()
+                Exit
+            EndIf
+
+            If SZI->ZI_DOCSUBS <> cDoc
+                SZI->(DbSkip())
+                Loop
+            EndIf
+
+            If SZI->ZI_STATUS == "R"
+                If !lPrtPerda
+                    lPrtPerda := .T.
+                    oSection2:Cell("ZI_QUANT"):setValue("")
+                    oSection2:Cell("B1_DESC"):setValue("")
+                    oSection2:Cell("ZI_PATRIM"):setValue("")
+                    oSection2:Cell("ZI_NUMSER"):setValue("")
+                    oSection2:Cell("ZI_ISSI"):setValue("")
+                    oSection2:PrintLine()
+
+                    oReport:PrtCenter("Perdas")
+                    oReport:SkipLine(1)
+                EndIf
+
+                SB1->(DbSeek(xFilial("SB1") + SZI->ZI_PRODUTO))
+
+                oSection2:Cell("ZI_QUANT"):setValue(SZI->ZI_PERDA)
+                oSection2:Cell("B1_DESC"):setValue(AllTrim(SB1->B1_DESC))
+                oSection2:Cell("ZI_PATRIM"):setValue(SZI->ZI_PATRIM)
+                oSection2:Cell("ZI_NUMSER"):setValue(SZI->ZI_NUMSER)
+                oSection2:Cell("ZI_ISSI"):setValue(SZI->ZI_ISSI)
+                oSection2:PrintLine()
+            EndIf
+
+            SZI->(DbSkip())
+        End
+
+        If lPrtPerda
+            oSection2:Cell("ZI_QUANT"):setValue("")
+            oSection2:Cell("B1_DESC"):setValue("")
+            oSection2:Cell("ZI_PATRIM"):setValue("")
+            oSection2:Cell("ZI_NUMSER"):setValue("")
+            oSection2:Cell("ZI_ISSI"):setValue("")
+            oSection2:PrintLine()
+        EndIf
+
         oReport:PrtCenter("Substituídos") 
         oReport:SkipLine(1)
-
-        oSection2:Init()
 
         // Kit substituído.
         cCodKit := ""

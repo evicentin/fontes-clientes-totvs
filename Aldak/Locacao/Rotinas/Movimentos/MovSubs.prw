@@ -18,6 +18,7 @@ Private cResp      := ""
 Private cMotivo    := ""
 Private cNumSeq    := ""
 Private cISSI      := ""
+Private cProdFil   := ""
 Private aDoc       := {}
 Private lAddLine   := .F.
 
@@ -111,7 +112,8 @@ oStruSZH:SetProperty("ZH_LOCALID", MODEL_FIELD_WHEN, FwBuildFeature(STRUCT_FEATU
 oStruSZH:SetProperty("ZH_CC", MODEL_FIELD_WHEN, FwBuildFeature(STRUCT_FEATURE_WHEN, ".F."))
 oStruSZH:SetProperty("ZH_CODRESP", MODEL_FIELD_WHEN, FwBuildFeature(STRUCT_FEATURE_WHEN, ".F."))
 
-oSZISub:SetProperty('ZI_DTBASE', MODEL_FIELD_INIT , {|| dDataBase})
+oSZISub:SetProperty('ZI_DTBASE', MODEL_FIELD_INIT, {|| dDataBase})
+oSZISub:SetProperty("ZI_PATRIM", MODEL_FIELD_VALID, {|oModel| MsvVldPat(oModel)})
 
 oModel:AddFields("SZHMASTER",, oStruSZH)
 
@@ -193,8 +195,10 @@ Local oStruSZH   := FWFormStruct(2, "SZH")
 Local oSZIOri    := FWFormStruct(2, "SZI", {|x| !AllTrim(x) + "|" $ "ZI_CODPOST|ZI_LOCALID|ZI_DATADEV|ZI_PERDA|ZI_DPSMI|ZI_DPSEQ|ZI_DPSKIT|"+;
                                                                     "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DTBASE|"})
 Local oSZISub    := FWFormStruct(2, "SZI", {|x| !AllTrim(x) + "|" $ "ZI_CODPOST|ZI_LOCALID|ZI_STATUS|ZI_DATADEV|ZI_PERDA|ZI_DOCSUBS|ZI_DPSMI|ZI_DPSEQ|"+;
-                                                                    "ZI_DPSKIT|ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTBASE|"})
+                                                                    "ZI_DPSKIT|ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTBASE|ZI_DADOS|"})
 Local oModel     := FWLoadModel("MOVSUBS")
+
+oSZISub:SetProperty("ZI_PATRIM", MVC_VIEW_LOOKUP, {|| ZIPatF3()})
 
 oView := FWFormView():New()
 
@@ -245,6 +249,71 @@ ElseIf mv_par01 == 2
 EndIf
 
 Return
+
+/*/{Protheus.doc} ZIPatF3
+Carrega a pesquisa F3 do campo de patrimônio para o produto selecionado.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@param oModel, object, Modelo do campo/grid em validação.
+
+@return logical, .T. quando vazio ou encontrado na SZJ.
+/*/
+Static Function ZIPatF3()
+
+Local oModel    := FWModelActive()
+Local oGrid     := oModel:GetModel("SZISUBST")
+Local nLinha    := oGrid:GetLine()
+
+cProdfil := oGrid:GetValue("ZI_PRODUTO", nLinha, oModel)
+
+Return("SZJFIL")
+
+
+/*/{Protheus.doc} MsvVldPat
+Valida se o patrimônio digitado existe no cadastro SZJ.
+
+Usada no grid SZISUBST tanto na substituição de kit quanto na de patrimônio.
+Patrimônio em branco é aceito (acessório / item sem controle de patrimônio).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@param oModel, object, Modelo do campo/grid em validação.
+
+@return logical, .T. quando vazio ou encontrado na SZJ.
+/*/
+Static Function MsvVldPat(oModel)
+
+Local lRet    := .T.
+Local cPatrim := ""
+Local aArea   := GetArea()
+Local aAreaZJ := SZJ->(GetArea())
+
+SZJ->(DbSetOrder(3)) // Patrimônio
+
+If oModel <> Nil
+    cPatrim := oModel:GetValue("ZI_PATRIM")
+EndIf
+
+If Empty(cPatrim)
+    RestArea(aAreaZJ)
+    RestArea(aArea)
+    Return(.T.)
+EndIf
+
+If !SZJ->(DbSeek(xFilial("SZJ") + cPatrim))
+    Help(,, "PATNOEX",, "O patrimônio informado não existe no cadastro.", 1, 0)
+    lRet := .F.
+EndIf
+
+RestArea(aAreaZJ)
+RestArea(aArea)
+
+Return(lRet)
 
 /*/{Protheus.doc} MsvEstorna
 Abre a seleção dos agrupamentos de substituição ativos para estornar a amarração
@@ -1238,11 +1307,72 @@ If nPos == 0
     Return
 EndIf
 
+// Substituição de kit: só confirma se o kit estiver na SZ8 daquele posto.
+// Senão o aviso aparece e a tela "+ Kit" permanece aberta.
+If mv_par01 == 1 .and. !VldKitPos(cKit)
+    Return
+EndIf
+
 LoadKit(cKit, cISSI, cLocaliz, aOpcOri[nPos][3], aOpcOri[nPos][4], aOpcOri[nPos][2])
 
 oDlg:End()
 
 Return
+
+/*/{Protheus.doc} VldKitPos
+Valida se o kit informado está cadastrado para o posto do cabeçalho.
+
+Usada na confirmação da tela "+ Kit" quando a opção é substituir kit
+(mv_par01 == 1). Pesquisa a SZ8 no índice 1 (Posto + Kit). Se o kit não
+pertencer ao posto, devolve .F. para o diálogo permanecer aberto.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@param cKit, character, Código do kit informado na pesquisa.
+
+@return logical, .T. quando o kit está cadastrado para o posto.
+/*/
+Static Function VldKitPos(cKit)
+
+Local lRet    := .F.
+Local aArea   := GetArea()
+Local aAreaZ8 := SZ8->(GetArea())
+Local cPosto  := ""
+Local oModel  := FWModelActive()
+Local oForm   := Nil
+
+Default cKit := ""
+
+If oModel <> Nil
+    oForm := oModel:GetModel("SZHMASTER")
+EndIf
+
+If oForm <> Nil
+    cPosto := oForm:GetValue("ZH_CODPOST")
+EndIf
+
+If Empty(cPosto)
+    cPosto := cCodPost
+EndIf
+
+If Empty(cKit)
+    Help(,, "KITVAZIO",, "Informe o kit antes de confirmar.", 1, 0)
+Else
+    SZ8->(DbSetOrder(1)) // Posto + Kit
+
+    If SZ8->(DbSeek(xFilial("SZ8") + cPosto + cKit))
+        lRet := .T.
+    Else
+        Help(,, "KITNOPOS",, "O kit [" + AllTrim(cKit) + "] não está cadastrado para o posto [" + AllTrim(cPosto) + "].", 1, 0)
+    EndIf
+EndIf
+
+RestArea(aAreaZ8)
+RestArea(aArea)
+
+Return(lRet)
 
 /*/{Protheus.doc} ButtonKit
 Carrega o kit substituto.
@@ -1728,9 +1858,93 @@ If nOperation == MODEL_OPERATION_UPDATE
 			" patrimônio(s) ativo(s); revise os itens substitutos.", 1, 0)
 		lRet := .F.
 	EndIf
+
+	// Confere o saldo em estoque das linhas ativas do grid de substitutos.
+	If lRet
+		lRet := MovTemEst(oModel)
+	EndIf
 EndIf
 
 FWRestRows(aSaveLines)
+
+Return(lRet)
+
+/*/{Protheus.doc} MovTemEst
+Confere se os produtos ativos do grid SZISUBST têm saldo em estoque (SZF).
+
+Soma ZI_QUANT por ZI_PRODUTO ignorando linha deletada e bloqueia a gravação
+quando ZF_SALDO (posto + localidade + produto + armazém "01") for menor que
+o solicitado.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+
+@param oModel, object, Modelo de dados da substituição.
+
+@return logical, .T. quando há saldo para todas as linhas ativas.
+/*/
+Static Function MovTemEst(oModel)
+
+Local nX       := 0
+Local nY       := 0
+Local nPos     := 0
+Local nSaldo   := 0
+Local nQtdPed  := 0
+Local cProduto := ""
+Local cItem    := ""
+Local oForm    := oModel:GetModel("SZHMASTER")
+Local oGrid    := oModel:GetModel("SZISUBST")
+Local cCodPost := oForm:GetValue("ZH_CODPOST")
+Local cLocalid := oForm:GetValue("ZH_LOCALID")
+Local aProd    := {}
+Local aArea    := GetArea()
+Local aAreaZF  := SZF->(GetArea())
+Local lRet     := .T.
+
+SZF->(DbSetOrder(1)) // Cod.posto + Localidade + Produto + Armazém
+
+For nX := 1 to oGrid:Length()
+	If oGrid:IsDeleted(nX)
+		Loop
+	EndIf
+
+	cProduto := oGrid:GetValue("ZI_PRODUTO", nX, oModel)
+
+	If Empty(cProduto)
+		Loop
+	EndIf
+
+	nPos := aScan(aProd, {|x| AllTrim(x[1]) == AllTrim(cProduto)})
+
+	If nPos > 0
+		aProd[nPos][2] += oGrid:GetValue("ZI_QUANT", nX, oModel)
+	Else
+		AAdd(aProd, {cProduto, oGrid:GetValue("ZI_QUANT", nX, oModel), oGrid:GetValue("ZI_ITEM", nX, oModel)})
+	EndIf
+Next nX
+
+For nY := 1 to Len(aProd)
+	cProduto := aProd[nY][1]
+	nQtdPed  := aProd[nY][2]
+	cItem    := aProd[nY][3]
+	nSaldo   := 0
+
+	If SZF->(DbSeek(xFilial("SZF") + cCodPost + cLocalid + cProduto + "01"))
+		nSaldo := SZF->ZF_SALDO
+	EndIf
+
+	If nSaldo < nQtdPed
+		Help(,, "SEMSALDO",, "[Item: " + cItem + "] Produto [" + AllTrim(cProduto) +;
+			"] sem saldo suficiente. Saldo: " + AllTrim(Str(nSaldo)) +;
+			" / Solicitado: " + AllTrim(Str(nQtdPed)) + ".", 1, 0)
+		lRet := .F.
+		Exit
+	EndIf
+Next nY
+
+RestArea(aAreaZF)
+RestArea(aArea)
 
 Return(lRet)
 
@@ -1992,6 +2206,8 @@ If nOperation == MODEL_OPERATION_UPDATE
             SZI->ZI_DATAMOV := dDataBase
             SZI->ZI_DESCRI  := oModelSZI:GetValue("ZI_DESCRI", nX, oModel)
             SZI->ZI_NUMSEQ  := cSeqGrv
+            SZI->ZI_DTORIG  := dDataBase
+            SZI->ZI_DADOS   := U_GrvLogUsr()
             MsUnlock()
 
             // Movimenta o estoque.
@@ -2006,8 +2222,7 @@ If nOperation == MODEL_OPERATION_UPDATE
                 EndIf
 
                 // Registra o valor da primeira locação caso ainda não tenha sido locado.
-                If !SZK->(DbSeek(xFilial("SZK") + cCodPost + cLocalid + oModelSZI:GetValue("ZI_CODKIT", nX, oModel) +;
-                    oModelSZI:GetValue("ZI_PATRIM", nX, oModel)))
+                If !SZK->(DbSeek(xFilial("SZK") +  oModelSZI:GetValue("ZI_PATRIM", nX, oModel)))
                     nValor := 0
                     // Se não tem valor de referência do patrimôio anteior, consulta o valor vigente na tabela.
                     If SZL->(DbSeek(xFilial("SZL") + cCodPost + cLocalid + oModelSZI:GetValue("ZI_CODKIT", nX, oModel)))
@@ -2214,16 +2429,17 @@ If nOperation == MODEL_OPERATION_UPDATE
                     SZM->ZM_CODPOST := cCodPost
                     SZM->ZM_LOCALID := cLocalid
                     SZM->ZM_DOC     := SZI->ZI_DOC
-                    // trazer o documento que gerou a perda
-                    // trazer o código do kit
-                    // trazer o valor calculado da perda
-                    // trazer a ISSI
+                    SZM->ZM_DOCPERD := cNewDoc
+                    SZM->ZM_CODKIT  := SZI->ZI_CODKIT
+                    SZM->ZM_ISSI    := SZI->ZI_ISSI
+                    SZM->ZM_VLUNIT  := U_CalcRes(SZI->ZI_PRODUTO, SZI->ZI_DTORIG, cCodPosto)
                     SZM->ZM_DATA    := dDataBase
                     SZM->ZM_ITEM    := SZI->ZI_ITEM
                     SZM->ZM_PRODUTO := SZI->ZI_PRODUTO
                     SZM->ZM_PATRIM  := SZI->ZI_PATRIM
                     SZM->ZM_NUMSER  := SZI->ZI_NUMSER
                     SZM->ZM_QUANT   := SZI->ZI_QUANT
+                    SZM->ZM_DADOS   := U_GrvLogUsr()
                     MsUnlock()
                 Else
                     U_GravaEst(cCodPost, cLocalid, SZI->ZI_PRODUTO, "02", SZI->ZI_QUANT, "E")

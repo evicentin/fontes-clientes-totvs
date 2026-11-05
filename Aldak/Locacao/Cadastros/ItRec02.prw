@@ -17,7 +17,13 @@ oBrowse := FWMBrowse():New()
 oBrowse:SetAlias("SZN")
 oBrowse:SetDescription("Itens Eventuais - Rateio")
 
-oBrowse:SetFilterDefault(If(Empty(cFilter), "ZN_TIPO == 'E'", " .and. ZN_TIPO == 'E'"))
+If Empty(cFilter)
+    cFilter := "ZN_TIPO == 'E'"
+Else
+    cFilter += " .and. ZN_TIPO == 'E'"
+EndIf
+
+oBrowse:SetFilterDefault(cFilter)
 
 oBrowse:Activate()
 
@@ -75,7 +81,7 @@ oModel:SetRelation("ZSDETAIL", {{"ZS_FILIAL", "xFilial('SZS')"}, {"ZS_CODIGO", "
 
 oModel:SetPrimaryKey({})
 
-oModel:SetDescription("Itens Recorrentes")
+oModel:SetDescription("Itens Eventuais")
 
 oModel:GetModel("ZNMASTER"):SetDescription("Dados Itens Rateio")
 oModel:GetModel("ZEDETAIL"):SetDescription("Dados Itens QQP")
@@ -97,7 +103,7 @@ View do MVC.
 Static Function ViewDef()
 
 Local oView
-Local oStruSZN := FWFormStruct(2, "SZN", {|cCampo| !AllTrim(cCampo)+"|"$ "ZE_LOG|"})
+Local oStruSZN := FWFormStruct(2, "SZN", {|cCampo| !AllTrim(cCampo)+"|"$ "ZN_LOG|"})
 Local oStruSZE := FWFormStruct(2, "SZE", {|cCampo| AllTrim(cCampo)+"|"$ "ZE_ITREC|ZE_ITEM|ZE_DESCRI|ZE_QUANT|ZE_VALOR|ZE_STATUS|ZE_DTEXEC|"})
 Local oStruSZO := FWFormStruct(2, "SZO", {|cCampo| AllTrim(cCampo)+"|"$ "ZO_CC|ZO_DESCCC|ZO_PERC|"})
 Local oStruSZS := FWFormStruct(2, "SZS", {|cCampo| AllTrim(cCampo)+"|"$ "ZS_LOCALID|ZS_DESCLOC|"})
@@ -356,19 +362,36 @@ Validação antes de salvar o formulário.
 /*/
 Static Function TudoOk(oModel)
 
-// Local nOperation := oModel:GetOperation()
-// Local oModelSZN  := oModel:GetModel("ZNMASTER")
-// Local cCodPost   := oModelSZN:GetValue("ZN_CODPOST")
-// Local cProjeto   := oModelSZN:GetValue("ZN_PROJETO")
+Local nOperation := oModel:GetOperation()
+Local oModelSZN  := oModel:GetModel("ZNMASTER")
+Local cCodPost   := oModelSZN:GetValue("ZN_CODPOST")
+Local cProjeto   := oModelSZN:GetValue("ZN_PROJETO")
+Local cNumQQP    := oModelSZN:GetValue("ZN_NUMQQP")
+Local cCodigo    := oModelSZN:GetValue("ZN_CODIGO")
+Local aArea      := SZN->(GetArea())
 Local lRet       := .T.
 
-// SZN->(DbSetOrder(1)) // Cód.Posto + Projeto + Num. QQP + Tipo
+If nOperation == MODEL_OPERATION_INSERT .or. nOperation == MODEL_OPERATION_UPDATE
 
-// If nOperation == MODEL_OPERATION_INSERT
-//     If SZN->(DbSeek(xFilial("SZN") + cCodPost + cProjeto + "E"))
-//         Help( ,,"ITREC02",,"Já existe cadastro de itens eventuais para esse posto avançado / projeto", 1, 0)
-//         lRet := .F.
-//     EndIf
-// EndIf
+    SZN->(DbSetOrder(1)) // Cód.Posto + Projeto + Num. QQP + Tipo
+
+    If SZN->(DbSeek(xFilial("SZN") + cCodPost + cProjeto + cNumQQP + "E"))
+        Do While !SZN->(Eof()) .and. SZN->ZN_FILIAL == xFilial("SZN") ;
+            .and. SZN->ZN_CODPOST == cCodPost .and. SZN->ZN_PROJETO == cProjeto ;
+            .and. SZN->ZN_NUMQQP == cNumQQP .and. SZN->ZN_TIPO == "E"
+
+            If SZN->ZN_CODIGO <> cCodigo
+                Help(,, "ITREC02",, "Já existe cadastro de itens eventuais para esse posto avançado / projeto / QQP.", 1, 0)
+                lRet := .F.
+                Exit
+            EndIf
+
+            SZN->(DbSkip())
+        EndDo
+    EndIf
+
+EndIf
+
+RestArea(aArea)
 
 Return(lRet)

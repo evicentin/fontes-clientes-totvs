@@ -72,7 +72,14 @@ oStruSZH:SetProperty('ZH_EMISSAO', MODEL_FIELD_INIT , {|| dDataBase})
 oStruSZH:SetProperty('ZH_STATUS', MODEL_FIELD_INIT , {|| 'A'})
 oStruSZI:SetProperty('ZI_DTBASE', MODEL_FIELD_INIT , {|| dDataBase})
 
+// Validação + preenchimento das descrições do cabeçalho.
+oStruSZH:SetProperty("ZH_CODPOST", MODEL_FIELD_VALID, {|| VldPostMv()})
+oStruSZH:SetProperty("ZH_LOCALID", MODEL_FIELD_VALID, {|| VldLocMv()})
+oStruSZH:SetProperty("ZH_CC"     , MODEL_FIELD_VALID, {|| VldCCMv()})
+oStruSZH:SetProperty("ZH_CODRESP", MODEL_FIELD_VALID, {|| VldRespMv()})
+
 oStruSZI:SetProperty("ZI_PRODUTO", MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_GetLineData()"))
+oStruSZI:SetProperty("ZI_PATRIM", MODEL_FIELD_VALID, FwBuildFeature(STRUCT_FEATURE_VALID, "U_VldPatrim()"))
 
 oModel := MPFormModel():New("MOVLOCM" , /*bPreValidacao*/, {|oModel| MovTudoOk(oModel)}, { |oMdl| AtuaMov(oMdl) }, /*bCancel*/)
 
@@ -91,6 +98,147 @@ oModel:GetModel("SZIDETAIL"):SetDescription("Dados dos Itens dos Movimentos")
 
 Return(oModel)
 
+/*/{Protheus.doc} VldPostMv
+Valida o posto (SZ1) e preenche ZH_DESCPOS.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldPostMv()
+
+Local oModel := FWModelActive()
+Local oMdl   := oModel:GetModel("SZHMASTER")
+Local cPosto := oMdl:GetValue("ZH_CODPOST")
+Local lRet   := .T.
+
+If Empty(cPosto)
+	oMdl:LoadValue("ZH_DESCPOS", "")
+	Return(lRet)
+EndIf
+
+SZ1->(DbSetOrder(1)) // Cód.Posto
+
+If SZ1->(DbSeek(xFilial("SZ1") + cPosto))
+	oMdl:LoadValue("ZH_DESCPOS", SZ1->Z1_DESCRI)
+Else
+	oMdl:LoadValue("ZH_DESCPOS", "")
+	Help(,, "POSTNOEX",, "O posto [" + AllTrim(cPosto) + "] não existe no cadastro de postos.", 1, 0)
+	lRet := .F.
+EndIf
+
+Return(lRet)
+
+/*/{Protheus.doc} VldLocMv
+Valida a localidade do posto (SZ2) e preenche ZH_DESCLOC.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldLocMv()
+
+Local oModel := FWModelActive()
+Local oMdl   := oModel:GetModel("SZHMASTER")
+Local cPosto := oMdl:GetValue("ZH_CODPOST")
+Local cLocal := oMdl:GetValue("ZH_LOCALID")
+Local lRet   := .T.
+
+If Empty(cLocal)
+	oMdl:LoadValue("ZH_DESCLOC", "")
+	Return(lRet)
+EndIf
+
+If Empty(cPosto)
+	Help(,, "POSTVAZIO",, "Informe primeiro o código do posto.", 1, 0)
+	Return(.F.)
+EndIf
+
+SZ2->(DbSetOrder(1)) // Cód.Posto + Localidade
+
+If SZ2->(DbSeek(xFilial("SZ2") + cPosto + cLocal))
+	oMdl:LoadValue("ZH_DESCLOC", SZ2->Z2_DESCRI)
+Else
+	oMdl:LoadValue("ZH_DESCLOC", "")
+	Help(,, "LOCNOEX",, "A localidade [" + AllTrim(cLocal) + "] não existe para o posto [" + AllTrim(cPosto) + "].", 1, 0)
+	lRet := .F.
+EndIf
+
+Return(lRet)
+
+/*/{Protheus.doc} VldCCMv
+Valida o centro de custo do posto (SZ5) e preenche ZH_DESCCC.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldCCMv()
+
+Local oModel := FWModelActive()
+Local oMdl   := oModel:GetModel("SZHMASTER")
+Local cPosto := oMdl:GetValue("ZH_CODPOST")
+Local cCC    := oMdl:GetValue("ZH_CC")
+Local lRet   := .T.
+
+If Empty(cCC)
+	oMdl:LoadValue("ZH_DESCCC", "")
+	Return(lRet)
+EndIf
+
+If Empty(cPosto)
+	Help(,, "POSTVAZIO",, "Informe primeiro o código do posto.", 1, 0)
+	Return(.F.)
+EndIf
+
+If SZ5->(DbSeek(xFilial("SZ5") + cPosto + cCC))
+	oMdl:LoadValue("ZH_CC", SZ5->Z5_CC)
+	oMdl:LoadValue("ZH_DESCCC", SZ5->Z5_DESCRI)
+Else
+	oMdl:LoadValue("ZH_DESCCC", "")
+	Help(,, "CCNOEX",, "O centro de custo [" + AllTrim(cCC) + "] não existe para o posto [" + AllTrim(cPosto) + "].", 1, 0)
+	lRet := .F.
+EndIf
+
+Return(lRet)
+
+/*/{Protheus.doc} VldRespMv
+Valida o responsável do posto (SZ0) e preenche ZH_DESCRES.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldRespMv()
+
+Local oModel := FWModelActive()
+Local oMdl   := oModel:GetModel("SZHMASTER")
+Local cPosto := oMdl:GetValue("ZH_CODPOST")
+Local cResp  := oMdl:GetValue("ZH_CODRESP")
+Local lRet   := .T.
+
+If Empty(cResp)
+	oMdl:LoadValue("ZH_DESCRES", "")
+	Return(lRet)
+EndIf
+
+If Empty(cPosto)
+	Help(,, "POSTVAZIO",, "Informe primeiro o código do posto.", 1, 0)
+	Return(.F.)
+EndIf
+
+SZ0->(DbSetOrder(1)) // Cód.Posto + Cód.Responsável
+
+If SZ0->(DbSeek(xFilial("SZ0") + cPosto + cResp))
+	oMdl:LoadValue("ZH_DESCRES", SZ0->Z0_NOME)
+Else
+	oMdl:LoadValue("ZH_DESCRES", "")
+	Help(,, "RESPNOEX",, "O responsável [" + AllTrim(cResp) + "] não existe para o posto [" + AllTrim(cPosto) + "].", 1, 0)
+	lRet := .F.
+EndIf
+
+Return(lRet)
+
 /*/{Protheus.doc} VIEWDEF
 View do MVC.
 
@@ -104,7 +252,7 @@ Local oView
 Local oStruSZH   := FWFormStruct(2, "SZH", {|cCampo| AllTrim(cCampo)+"|"$ "ZH_DOC|ZH_EMISSAO|ZH_CODPOST|ZH_DESCPOS|ZH_LOCALID|ZH_DESCLOC|"+;
                                                                           "ZH_CC|ZH_DESCCC|ZH_CODRESP|ZH_DESCRES|ZH_CHAMADO|ZH_MOTIVO|ZH_STATUS|ZH_DPSCM|"})
 Local oStruSZI   := FWFormStruct(2, "SZI", {|cCampo| !AllTrim(cCampo)+"|"$ "ZI_CODPOST|ZI_LOCALID|ZI_DOC|ZI_DATADEV|ZI_PERDA|ZI_DPSMI|ZI_DPSEQ|ZI_DPSKIT|"+;
-                                                                            "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTBASE|"})
+                                                                            "ZI_DPSSUB|ZI_DPSMC|ZI_DPSEQDV|ZI_DPSMG|ZI_DTBASE|ZI_DTORIG|ZI_LOGDTBS|ZI_DADOS|"})
 Local oModel     := FWLoadModel("MOVLOC")
 
 oView := FWFormView():New()
@@ -121,10 +269,8 @@ oView:CreateHorizontalBox("GRID", 60)
 
 oView:AddOtherObject("BUTTONKIT", {|oPanel| ButtonKit(oPanel)})
     
-oView:addUserButton("Paralisa / Reativa","MAGIC_BMP", {|| Paralisa()}, /*cToolTip*/, /*nShortCut*/, /*aOptions*/,/*lShowBar*/)
-
+oView:addUserButton("Paralisa / Reativa","MAGIC_BMP", {|| Paralisa()}, /*cToolTip*/, /*nShortCut*/, {MODEL_OPERATION_UPDATE},/*lShowBar*/)
 oView:SetCloseOnOk({|| .T.})
-// oView:SetProperty("VIEW_SZH", BUTTONOK, .F.)
 
 oView:SetOwnerView("VIEW_SZH", "CABEC")
 oView:SetOwnerView("BUTTONKIT", "TOOLBAR")
@@ -199,6 +345,31 @@ EndIf
 
 Return(.T.)
 
+/*/{Protheus.doc} VldPatrim
+Valida se o patrimônio digitado no grid existe no cadastro de patrimônios (SZJ).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+User Function VldPatrim()
+
+Local oModel  := FWModelActive()
+Local oGrid   := oModel:GetModel("SZIDETAIL")
+Local cPatrim := AllTrim(oGrid:GetValue("ZI_PATRIM"))
+Local lRet    := .T.
+
+If !Empty(cPatrim)
+	SZJ->(DbSetOrder(3)) // Patrimônio
+
+	If !SZJ->(DbSeek(xFilial("SZJ") + oGrid:GetValue("ZI_PATRIM")))
+		Help(,, "PATRNOEX",, "O patrimônio [" + cPatrim + "] não existe no cadastro de patrimônios.", 1, 0)
+		lRet := .F.
+	EndIf
+EndIf
+
+Return(lRet)
+
 /*/{Protheus.doc} SZILinOk
 Valida linha de itens do movimento.
 
@@ -252,9 +423,82 @@ If nOperation == MODEL_OPERATION_INSERT
 			EndIf
 		EndIf
 	Next nX
+
+	// Impede a gravação se algum item ativo do grid não tiver saldo em estoque.
+	If lRet
+		lRet := MovTemEst(oModel)
+	EndIf
 EndIf
 
 FWRestRows(aSaveLines)
+
+Return(lRet)
+
+/*/{Protheus.doc} MovTemEst
+Valida se todos os itens ativos do grid possuem saldo em estoque (SZF),
+somando a quantidade por produto. Retorna .F. se algum produto ficar negativo.
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function MovTemEst(oModel)
+
+Local nX         := 0
+Local nPos       := 0
+Local nQuant     := 0
+Local nSaldo     := 0
+Local oModelSZH  := oModel:GetModel("SZHMASTER")
+Local oGrid      := oModel:GetModel("SZIDETAIL")
+Local cCodPost   := oModelSZH:GetValue("ZH_CODPOST")
+Local cLocalid   := oModelSZH:GetValue("ZH_LOCALID")
+Local cProduto   := ""
+Local aProdut    := {}
+Local aSaveLines := FWSaveRows()
+Local lRet       := .T.
+
+// Acumula a quantidade solicitada por produto, considerando apenas as linhas ativas.
+For nX := 1 to oGrid:Length()
+	oGrid:GoLine(nX)
+
+	If oGrid:IsDeleted()
+		Loop
+	EndIf
+
+	cProduto := oGrid:GetValue("ZI_PRODUTO")
+	nQuant   := oGrid:GetValue("ZI_QUANT")
+
+	If Empty(cProduto)
+		Loop
+	EndIf
+
+	nPos := aScan(aProdut, {|aItem| aItem[1] == cProduto})
+
+	If nPos == 0
+		aAdd(aProdut, {cProduto, nQuant})
+	Else
+		aProdut[nPos, 2] += nQuant
+	EndIf
+Next nX
+
+FWRestRows(aSaveLines)
+
+SZF->(DbSetOrder(1)) // Cod.posto + Localidade + Produto + Armazém
+
+For nX := 1 to Len(aProdut)
+	nSaldo := 0
+
+	If SZF->(DbSeek(xFilial("SZF") + cCodPost + cLocalid + aProdut[nX, 1] + "01"))
+		nSaldo := SZF->ZF_SALDO
+	EndIf
+
+	If nSaldo < aProdut[nX, 2]
+		Help(,, "SEMSALDO",, "O produto [" + AllTrim(aProdut[nX, 1]) + "] não possui saldo suficiente para o movimento." + CRLF +;
+			"Saldo disponível: " + AllTrim(Str(nSaldo)) + " / Solicitado: " + AllTrim(Str(aProdut[nX, 2])) + "." + CRLF +;
+			"Exclua a linha ou ajuste a quantidade para prosseguir.", 1, 0)
+		lRet := .F.
+	EndIf
+Next nX
 
 Return(lRet)
 
@@ -288,7 +532,7 @@ Local lTemPat    := .F.
 
 SZI->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento + Item
 SZJ->(DbSetOrder(3)) // Patrimônio
-SZK->(DbSetOrder(1)) // Cód.Posto + Localidade + Kit + Patromônio
+SZK->(DbSetOrder(1)) // Patromônio
 SZL->(DbSetOrder(1)) // Cód.Posto + Localidade + Kit
 SZM->(DbSetOrder(1)) // Cód.Posto + Localidade + Documento + Item
 
@@ -340,7 +584,7 @@ If nOperation == MODEL_OPERATION_INSERT
 				EndIf
 
 				// Registra o valor da primeira locação caso ainda não tenha sido locado.
-				If !SZK->(DbSeek(xFilial("SZK") + cCodPost + cLocalid + cKit + cPatrim))
+				If !SZK->(DbSeek(xFilial("SZK") + cPatrim))
 					nValor := 0
 					// Se não tem valor de referência do patrimôio anteior, consulta o valor vigente na tabela.
 					If SZL->(DbSeek(xFilial("SZL") + cCodPost + cLocalid + cKit))
@@ -596,6 +840,11 @@ Local cFiltro  := U_MBLocxUsr(1, "SZH")
 Local cPatrim := Space(20)
 Local cISSI   := Space(14)
 
+If Upper(AllTrim(FunName())) <> "MOVLOC"
+	MsgInfo("Função não permitida nessa rotina.", "Atenção")
+	Return
+EndIf
+
 DEFINE MSDIALOG oDlg TITLE "Pesquisa Patrimônio" FROM 000, 000  TO 160, 290 COLORS 0, 16777215 PIXEL
 
 @ 005, 005 SAY oSay1 PROMPT "Patrimônio" SIZE 040, 007 OF oDlg COLORS 0, 16777215 PIXEL
@@ -738,12 +987,44 @@ DEFINE MSDIALOG oDlg TITLE "Pesquisa de Kits" FROM 000, 000  TO 220, 500 COLORS 
 @ 065, 005 MSGET oGet3 VAR cLocaliz SIZE 237, 010 OF oDlg COLORS 0, 16777215 PIXEL
 
 
-@ 094, 163 BUTTON oButton1 PROMPT "Confirmar" ACTION(LoadKit(cKit, cISSI, cLocaliz), oDlg:End()) SIZE 037, 012 OF oDlg PIXEL
+@ 094, 163 BUTTON oButton1 PROMPT "Confirmar" ACTION(If(VldKitPos(cCodPost, cKit), (LoadKit(cKit, cISSI, cLocaliz), oDlg:End()), Nil)) SIZE 037, 012 OF oDlg PIXEL
 @ 094, 205 BUTTON oButton2 PROMPT "Cancelar" ACTION(oDlg:End()) SIZE 037, 012 OF oDlg PIXEL
 
 ACTIVATE MSDIALOG oDlg CENTERED
 
 Return
+
+/*/{Protheus.doc} VldKitPos
+Valida se o kit digitado esta cadastrado para o posto no cadastro
+de kits por posto (SZ7 cabecalho / SZ8 itens).
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldKitPos(cCodPost, cKit)
+
+Local aArea    := GetArea()
+Local aAreaSZ8 := SZ8->(GetArea())
+Local lRet     := .T.
+
+If Empty(cKit)
+	MsgInfo("Informe o codigo do kit.", "Atencao")
+	lRet := .F.
+Else
+	SZ8->(DbSetOrder(1)) // Cod. Posto + Cod. Kit
+
+	If !SZ8->(DbSeek(xFilial("SZ8") + cCodPost + cKit))
+		MsgInfo("O kit [" + AllTrim(cKit) + "] nao esta cadastrado para o posto [" + AllTrim(cCodPost) + "]." + CRLF +;
+			"Verifique o cadastro de kits por posto.", "Atencao")
+		lRet := .F.
+	EndIf
+EndIf
+
+RestArea(aAreaSZ8)
+RestArea(aArea)
+
+Return(lRet)
 
 /*/{Protheus.doc} LoadKit
 Carrega os itens do kit no grid.
@@ -925,6 +1206,7 @@ If SZI->(DbSeek(xFilial("SZI") + cCodPost +  cLocalid + cDoc + cItem))
 			If SZW->(DbSeek(xFilial("SZW") + cDoc + cPatrim))
 				RecLock("SZW", .F.)
 				SZW->ZW_DTATIVA := dDataBase
+				SZW->ZW_STATUS  := "R"
 				MSUnlock()
 			EndIf
 

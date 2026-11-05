@@ -98,6 +98,8 @@ AAdd(aFields, {"ZH_CCNEW"  , "C",  30, 0})
 AAdd(aFields, {"ZH_DESCCC" , "C", 180, 0})
 AAdd(aFields, {"ZH_RESPNEW", "C",   6, 0})
 AAdd(aFields, {"ZH_NOME"   , "C", 120, 0})
+AAdd(aFields, {"ZH_MOTIVO" , TamSX3("ZH_MOTIVO")[3] , TamSX3("ZH_MOTIVO")[1] , 0})
+AAdd(aFields, {"ZH_CHAMADO", TamSX3("ZH_CHAMADO")[3], TamSX3("ZH_CHAMADO")[1], 0})
 
 oTempTable := FWTemporaryTable():New(cAliasTmp, aFields)
 oTempTable:AddIndex("1", {"ZH_CODPOST", "ZH_LOCALID", "ZH_DOC"} )
@@ -135,7 +137,7 @@ Static Function ModelDef()
 Local oModel
 Local oStruTMP := FWFormModelStruct():New()
 
-oStruTMP:AddTable(cAliasTmp, {"ZH_CODPOST", "ZH_LOCALID", "ZH_DOC", "ZH_RESP", "ZH_CCNEW", "ZH_DESCCC", "ZH_RESPNEW", "ZH_NOME"}, "SZHTEMP")
+oStruTMP:AddTable(cAliasTmp, {"ZH_CODPOST", "ZH_LOCALID", "ZH_DOC", "ZH_RESP", "ZH_CCNEW", "ZH_DESCCC", "ZH_RESPNEW", "ZH_NOME", "ZH_MOTIVO", "ZH_CHAMADO"}, "SZHTEMP")
 
 // [01]  C   Titulo do campo
 // [02]  C   ToolTip do campo
@@ -157,10 +159,12 @@ oStruTMP:AddField("Localidade" , "Localidade" , "ZH_LOCALID", "C",  6 , 0, Nil, 
 oStruTMP:AddField("Documento"  , "Documento"  , "ZH_DOC"    , "C", 30 , 0, Nil, {|| .T.}, {}, .F., {|| cDocumento} , .F., .T., .F.)     
 oStruTMP:AddField("CC"         , "CC"         , "ZH_CC"     , "C", 30 , 0, Nil, {|| .T.}, {}, .F., {|| cCCusto}    , .F., .T., .F.)     
 oStruTMP:AddField("Responsavel", "Responsavel", "ZH_RESP"   , "C", 80 , 0, Nil, {|| .T.}, {}, .F., {|| cNomeResp}  , .F., .T., .F.)     
-oStruTMP:AddField("Novo CC"    , "Novo CC"    , "ZH_CCNEW"  , "C", 30 , 0, Nil, {|| .T.}, {}, .T., Nil             , .F., .T., .F.)     
+oStruTMP:AddField("Novo CC"    , "Novo CC"    , "ZH_CCNEW"  , "C", 30 , 0, {|oMdl, cFld, xVal| VldCCNew(oMdl, xVal)}, {|| .T.}, {}, .T., Nil, .F., .T., .F.)
 oStruTMP:AddField("Desc.CC"    , "Desc.CC"    , "ZH_DESCCC" , "C", 180, 0, Nil, {|| .T.}, {}, .F., Nil             , .F., .T., .F.)     
-oStruTMP:AddField("Novo Resp." , "Novo Resp." , "ZH_RESPNEW", "C", 6  , 0, Nil, {|| .T.}, {}, .T., Nil             , .F., .T., .F.)     
+oStruTMP:AddField("Novo Resp." , "Novo Resp." , "ZH_RESPNEW", "C", 6  , 0, {|oMdl, cFld, xVal| VldRespNew(oMdl, xVal)}, {|| .T.}, {}, .T., Nil, .F., .T., .F.)
 oStruTMP:AddField("Nome Resp." , "Nome Resp." , "ZH_NOME"   , "C", 120, 0, Nil, {|| .T.}, {}, .F., Nil             , .F., .T., .F.)     
+oStruTMP:AddField("Motivo"     , "Motivo"     , "ZH_MOTIVO" , TamSX3("ZH_MOTIVO")[3] , TamSX3("ZH_MOTIVO")[1] , 0, Nil, {|| .T.}, {}, .F., Nil, .F., .T., .F.)
+oStruTMP:AddField("Chamado"    , "Chamado"    , "ZH_CHAMADO", TamSX3("ZH_CHAMADO")[3], TamSX3("ZH_CHAMADO")[1], 0, Nil, {|| .T.}, {}, .F., Nil, .F., .T., .F.)
 
 oModel := MPFormModel():New("TRAN01M", /*bPreValidacao*/, /*bPosValidacao*/, {|oMdl| AtuaTransf(oMdl)}, /*bCancel*/)
 oModel:AddFields("SZHTMP", /*cOwner*/ ,oStruTMP)
@@ -171,6 +175,81 @@ oModel:SetDescription("Troca de Gerencia")
 oModel:GetModel("SZHTMP"):SetDescription("Dados do Documento")
 
 Return(oModel)
+
+/*/{Protheus.doc} VldCCNew
+Validação do campo ZH_CCNEW: funciona como gatilho e preenche ZH_DESCCC
+com a descrição do centro de custo (SZ5, índice 1: Posto + CC).
+
+@param oMdl Submodelo de campos (SZHTMP)
+@param xVal Valor digitado em ZH_CCNEW
+@return lRet .T. se o centro de custo existir
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldCCNew(oMdl, xVal)
+
+Local lRet  := .T.
+Local aArea := GetArea()
+Local cCC   := ""
+
+Default xVal := oMdl:GetValue("ZH_CCNEW")
+
+cCC := PadR(xVal, TamSX3("Z5_CC")[1])
+
+If Empty(xVal)
+    oMdl:LoadValue("ZH_DESCCC", "")
+Else
+    SZ5->(DbSetOrder(1)) // Posto + CC
+    If SZ5->(DbSeek(xFilial("SZ5") + cCodPost + cCC))
+        oMdl:LoadValue("ZH_DESCCC", SubStr(SZ5->Z5_DESCRI, 1, 180))
+    Else
+        oMdl:LoadValue("ZH_DESCCC", "")
+        Help(Nil, Nil, "TRAN01", Nil, "Centro de custo não encontrado para o posto " + AllTrim(cCodPost) + ".", 1, 0)
+        lRet := .F.
+    EndIf
+EndIf
+
+RestArea(aArea)
+
+Return(lRet)
+
+/*/{Protheus.doc} VldRespNew
+Validação do campo ZH_RESPNEW: funciona como gatilho e preenche ZH_NOME
+com o nome do responsável (SZ0, índice 1: Posto + Cód.Responsável).
+
+@param oMdl Submodelo de campos (SZHTMP)
+@param xVal Valor digitado em ZH_RESPNEW
+@return lRet .T. se o responsável existir
+
+@author Ewerton Alex Vicentin
+@since 20/10/2025
+@version P12
+/*/
+Static Function VldRespNew(oMdl, xVal)
+
+Local lRet  := .T.
+Local aArea := GetArea()
+
+Default xVal := oMdl:GetValue("ZH_RESPNEW")
+
+If Empty(xVal)
+    oMdl:LoadValue("ZH_NOME", "")
+Else
+    SZ0->(DbSetOrder(1)) // Posto + Cód.Responsável
+    If SZ0->(DbSeek(xFilial("SZ0") + cCodPost + xVal))
+        oMdl:LoadValue("ZH_NOME", SubStr(SZ0->Z0_NOME, 1, 120))
+    Else
+        oMdl:LoadValue("ZH_NOME", "")
+        Help(Nil, Nil, "TRAN01", Nil, "Responsável não encontrado para o posto " + AllTrim(cCodPost) + ".", 1, 0)
+        lRet := .F.
+    EndIf
+EndIf
+
+RestArea(aArea)
+
+Return(lRet)
 
 /*/{Protheus.doc} VIEWDEF
 View do MVC.
@@ -212,7 +291,9 @@ oStruTmp:AddField("ZH_RESP"   , "05", "Responsavel", "Responsavel", Nil, "C", "@
 oStruTmp:AddField("ZH_CCNEW"  , "06", "Novo CC"    , "Novo CC"    , Nil, "C", "@!", Nil, "SZ5", .T., Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil)
 oStruTmp:AddField("ZH_DESCCC" , "07", "Desc.CC"    , "Desc.CC"    , Nil, "C", "@!", Nil, Nil  , .F., Nil, Nil, Nil, Nil, Nil, Nil, Nil, .T.)
 oStruTmp:AddField("ZH_RESPNEW", "08", "Novo Resp." , "Novo Resp." , Nil, "C", "@!", Nil, "SZ0", .T., Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil)
-oStruTmp:AddField("ZH_NOME"   , "09", "Nome"       , "Nome"       , Nil, "C", "@!", Nil, Nil  , .F., Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil)
+oStruTmp:AddField("ZH_NOME"   , "09", "Nome"       , "Nome"       , Nil, "C", "@!", Nil, Nil  , .F., Nil, Nil, Nil, Nil, Nil, Nil, Nil, .T.)
+oStruTmp:AddField("ZH_MOTIVO" , "10", "Motivo"     , "Motivo"     , Nil, TamSX3("ZH_MOTIVO")[3] , "", Nil, Nil, .T., Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil)
+oStruTmp:AddField("ZH_CHAMADO", "11", "Chamado"    , "Chamado"    , Nil, TamSX3("ZH_CHAMADO")[3], "", Nil, Nil, .T., Nil, Nil, Nil, Nil, Nil, Nil, Nil, Nil)
 
 oView := FWFormView():New()
 
@@ -374,6 +455,7 @@ If nOperation == MODEL_OPERATION_INSERT
     SZH->ZH_CHAMADO := cChamado
     SZH->ZH_MOTIVO  := cMotivo
     SZH->ZH_STATUS  := "D"
+    SZH->ZH_TROCA   := "S"
     MsUnlock()
 
     For nX := 1 to Len(aItens)
@@ -445,9 +527,10 @@ If nOperation == MODEL_OPERATION_INSERT
     SZH->ZH_LOCALID := cLocalid
     SZH->ZH_CC      := oModelSZH:GetValue("ZH_CCNEW")
     SZH->ZH_CODRESP := oModelSZH:GetValue("ZH_RESPNEW")
-    SZH->ZH_CHAMADO := cChamado
-    SZH->ZH_MOTIVO  := cMotivo
+    SZH->ZH_CHAMADO := oModelSZH:GetValue("ZH_CHAMADO")
+    SZH->ZH_MOTIVO  := oModelSZH:GetValue("ZH_MOTIVO")
     SZH->ZH_STATUS  := "A"
+    SZH->ZH_TROCA   := "S"
     MsUnlock()
 
     For nX := 1 to Len(aItens)
@@ -496,7 +579,6 @@ EndIf
 
 MsgInfo("Transferência concluída. Novo documento de entrega [" + cNewDoc + "] - Documento de devolução [" + cNewDev + "]",;
         "Atenção")
-
 
 Return(.T.)
 

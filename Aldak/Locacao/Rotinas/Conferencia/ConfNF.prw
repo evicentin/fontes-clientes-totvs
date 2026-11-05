@@ -20,7 +20,6 @@ aCores := {{'ZC_STATUS == "P" ', 'BR_VERMELHO'},;
 AADD(aRotina ,{"Pesquisar" , "AxPesqui"                  , 0, 1})
 AADD(aRotina ,{"Visualizar", 'U_ManConf("SZC",RecNo(),2)', 0, 2})
 AADD(aRotina ,{"Conferir"  , 'U_ManConf("SZC",RecNo(),4)', 0, 4})
-AADD(aRotina ,{"Estornar"  , 'U_EstConf()'               , 0, 4})
 AADD(aRotina ,{"Importar"  , 'U_ImpConf()'               , 0, 3})
 AADD(aRotina ,{"Excluir"   , 'U_ManConf("SZC",RecNo(),5)', 0, 5})
 AADD(aRotina ,{"Legenda"   , 'U_ConfLeg()'				 , 0, 5})
@@ -333,7 +332,80 @@ If nOpc == 4
 	EndIf
 EndIf
 
+//Exclusão (antigo estorno): não permite excluir nota com patrimônio movimentado.
+If nOpc == 5
+	If !ChkMovPat(M->ZC_DOC, M->ZC_SERIE, M->ZC_CLIENTE, M->ZC_LOJA)
+		Return(.F.)
+	EndIf
+EndIf
+
 Return(.T.)
+
+*/------------------------------------------------------------------*/
+*/ Rotina: ChkMovPat												*/
+*/ Autor : Ewerton Vicentin											*/
+*/ Data  : 17/11/2025												*/
+*/------------------------------------------------------------------*/
+*/ Verifica se algum patrimônio da nota já foi movimentado.			*/
+*/------------------------------------------------------------------*/
+Static Function ChkMovPat(cDoc, cSerie, cCliente, cLoja)
+
+Local lRet     := .T.
+Local cAliasZI := ""
+Local nOrdZJ   := 0
+
+SZJ->(DbSetOrder(2)) // Doc + Série + Cliente + Loja + Item
+nOrdZJ := SZJ->(IndexOrd())
+
+SZJ->(DbSeek(xFilial("SZJ") + cDoc + cSerie + cCliente + cLoja))
+
+While lRet .and. !SZJ->(EOF()) .and.;
+	SZJ->ZJ_FILIAL == xFilial("SZJ") .and.;
+	SZJ->ZJ_DOC == cDoc .and.;
+	SZJ->ZJ_SERIE == cSerie .and.;
+	SZJ->ZJ_CLIENTE == cCliente .and.;
+	SZJ->ZJ_LOJA == cLoja
+
+	//1) Patrimônio com status diferente de "N" (não está mais livre no estoque).
+	If SZJ->ZJ_LOCADO <> "N"
+		MsgInfo("O patrimônio [" + AllTrim(SZJ->ZJ_PATRIM) + "] está com a situação [" + SZJ->ZJ_LOCADO + "] e " +;
+			"não permite a exclusão da nota fiscal.", "Atenção")
+		lRet := .F.
+		Exit
+	EndIf
+
+	//2) Patrimônio com movimento gerado na tabela de movimentos (SZI).
+	cAliasZI := GetNextAlias()
+
+	BeginSQL Alias cAliasZI
+		SELECT
+			COUNT(*) AS QTDMOV
+		FROM
+			%table:SZI% SZI
+		WHERE
+			SZI.ZI_FILIAL = %xFilial:SZI% AND
+			SZI.ZI_PATRIM = %Exp:SZJ->ZJ_PATRIM% AND
+			SZI.%notDel%
+	EndSQL
+
+	If (cAliasZI)->QTDMOV > 0
+		MsgInfo("O patrimônio [" + AllTrim(SZJ->ZJ_PATRIM) + "] possui movimentação e " +;
+			"não permite a exclusão da nota fiscal.", "Atenção")
+		lRet := .F.
+	EndIf
+
+	(cAliasZI)->(DbCloseArea())
+
+	If !lRet
+		Exit
+	EndIf
+
+	SZJ->(DbSkip())
+End
+
+SZJ->(DbSetOrder(nOrdZJ))
+
+Return(lRet)
 
 */------------------------------------------------------------------*/
 */ Rotina: ConfLeg   												*/
@@ -348,7 +420,6 @@ Local aCores := {}
 
 aCores := {{'BR_VERMELHO', "Pendente"},;
 		   {'BR_VERDE'   , "Geradas"}}
-
 
 BrwLegenda(cCadastro, "Status", aCores)
 
@@ -378,7 +449,7 @@ If !Pergunte("IMPNFREMES", .T.)
 	Return
 EndIf
 
-If Empty(mv_par11) .or. Empty(mv_par12)
+If Empty(mv_par05) .or. Empty(mv_par06)
 	MsgInfo("É necessário informar o posto avançado e a localidade, verifique os parâmetros.", "Atenção")
 	Return
 EndIf
@@ -442,11 +513,9 @@ BeginSQL Alias "SF2QRY"
 		INNER JOIN %Table:SA1% SA1 ON A1_COD = f2_CLIENTE AND A1_LOJA = F2_LOJA
 	WHERE
 		F2_FILIAL = %xFilial:SF2% AND
+		SA1.A1_FILIAL = %xFilial:SA1% AND
 		F2_EMISSAO BETWEEN %Exp:DtoS(mv_par01)% AND %Exp:DtoS(mv_par02)% AND
-		F2_CLIENTE BETWEEN %Exp:mv_par03% AND %Exp:mv_par05% AND
-		F2_LOJA BETWEEN %Exp:mv_par04% AND %Exp:mv_par06% AND
-		F2_DOC BETWEEN %Exp:mv_par07% AND %Exp:mv_par08% AND
-		F2_SERIE BETWEEN %Exp:mv_par09% AND %Exp:mv_par10% AND
+		F2_DOC BETWEEN %Exp:mv_par03% AND %Exp:mv_par04% AND
 		SA1.%NotDel% AND
 		SF2.%NotDel%
 EndSQL
@@ -486,6 +555,7 @@ Local cPatrim := ""
 SB1->(DbSetOrder(1)) // Código
 SD2->(DbSetOrder(3)) // Doc + Série + Cliente + Loja
 ST9->(DbSetOrder(7)) // Cod.Produto
+SZJ->(DbSetOrder(3)) // Patrimônio
 Z01->(DbSetOrder(3)) // Pedido + Item + Produto
 
 For nX := 1 to Len(aNF)
@@ -493,8 +563,8 @@ For nX := 1 to Len(aNF)
 		BeginTran()
 		RecLock("SZC", .T.)
 		SZC->ZC_FILIAL  := xFilial("SZC")
-		SZC->ZC_CODPOST := mv_par11
-		SZC->ZC_LOCALID := mv_par12
+		SZC->ZC_CODPOST := mv_par05
+		SZC->ZC_LOCALID := mv_par06
 		SZC->ZC_EMISSAO := aNF[nX, 2]
 		SZC->ZC_DOC     := aNF[nX, 3]
 		SZC->ZC_SERIE   := aNF[nX, 4]
@@ -523,21 +593,39 @@ For nX := 1 to Len(aNF)
 						Z01->Z01_ITEMPD == SD2->D2_ITEMPV .and.; 
 						Z01->Z01_PRODUT == SD2->D2_COD .and. !Z01->(EOF())
 
-						RecLock("SZJ", .T.)
-						SZJ->ZJ_FILIAL  := xFilial("SZJ")
-						SZJ->ZJ_CODPOST := mv_par11
-						SZJ->ZJ_LOCALID := mv_par12
-						SZJ->ZJ_DOC     := aNF[nX, 3]
-						SZJ->ZJ_SERIE   := aNF[nX, 4]
-						SZJ->ZJ_CLIENTE := aNF[nX, 5]
-						SZJ->ZJ_LOJA    := aNF[nX, 6]
-						SZJ->ZJ_ITEM    := SD2->D2_ITEM
-						SZJ->ZJ_PRODUTO := SD2->D2_COD
-						SZJ->ZJ_PATRIM  := Z01->Z01_CHATF
-						SZJ->ZJ_NUMSER  := Z01->Z01_CHASSI
-						SZJ->ZJ_ESN		:= Z01->Z01_ESN
-						SZJ->ZJ_LOCADO	:= "N"
-						MsUnlock()
+						If !SZJ->(DbSeek(xFilial("SZJ") + AllTrim(Z01->Z01_CHATF)))
+							RecLock("SZJ", .T.)
+							SZJ->ZJ_FILIAL  := xFilial("SZJ")
+							SZJ->ZJ_CODPOST := mv_par05
+							SZJ->ZJ_LOCALID := mv_par06
+							SZJ->ZJ_DOC     := aNF[nX, 3]
+							SZJ->ZJ_SERIE   := aNF[nX, 4]
+							SZJ->ZJ_CLIENTE := aNF[nX, 5]
+							SZJ->ZJ_LOJA    := aNF[nX, 6]
+							SZJ->ZJ_ITEM    := SD2->D2_ITEM
+							SZJ->ZJ_PRODUTO := SD2->D2_COD
+							SZJ->ZJ_PATRIM  := Z01->Z01_CHATF
+							SZJ->ZJ_NUMSER  := Z01->Z01_CHASSI
+							SZJ->ZJ_ESN		:= Z01->Z01_ESN
+							SZJ->ZJ_LOCADO	:= "N"
+							MsUnlock()
+						Else
+							If SZJ->ZJ_LOCADO == "S"
+								MsgInfo("O patrimônio [" + AllTrim(Z01->Z01_CHATF) + "] encontra-se locado e não pode ser adicionado no "+;
+									"estoque novamente.", "Atenção")
+								Z01->(DbSkip())
+								Loop
+							ElseIf SZJ->ZJ_LOCADO == "R"
+								MsgInfo("O patrimônio [" + AllTrim(Z01->Z01_CHATF) + "] encontra-se ressarcido e não pode ser adicionado no "+;
+									"estoque novamente.", "Atenção")
+								Z01->(DbSkip())
+								Loop
+							Else 
+								MsgInfo("O patrimônio [" + AllTrim(Z01->Z01_CHATF) + "] já está no estoque e não será adicionado novamente.", "Atenção")
+								Z01->(DbSkip())
+								Loop
+							EndIf
+						EndIf
 						Z01->(DbSkip())
 					End
 				Else
